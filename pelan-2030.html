@@ -105,7 +105,8 @@ svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans
 <script>
 // @logic-start — fungsi tulen (diuji dalam tests/calc.test.mjs)
 const DEFAULTS = () => ({
-  v: 1,
+  v: 2,
+  updatedAt: 0,
   settings: { name: "", targetPassive: 3000, emergencyMonths: 6 },
   savings: 0,
   incomes: [], commitments: [], debts: [], tx: [], goals: [], ventures: [],
@@ -126,8 +127,10 @@ function normalize(d) {
   }
   if (!o.paid || typeof o.paid !== "object") o.paid = {};
   o.savings = Number(o.savings) || 0;
-  // Migrasi masa depan: if (o.v < 2) { ...; o.v = 2 }
   o.v = Math.max(1, Number(o.v) || 1);
+  // v1 → v2: tambah cap masa `updatedAt` untuk penyegerakan awan.
+  if (o.v < 2) { o.updatedAt = Number(o.updatedAt) || 0; o.v = 2; }
+  o.updatedAt = Number(o.updatedAt) || 0;
   return o;
 }
 
@@ -223,6 +226,8 @@ function trend(tx, today, n) {
 // @logic-end
 </script>
 
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
 <script>
 "use strict";
 const KEY = "pelan2030";
@@ -249,7 +254,54 @@ function load() {
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { toast("Gagal simpan — storan pelayar penuh atau disekat"); }
 }
-function commit() { save(); render(); }
+function commit() { S.updatedAt = Date.now(); save(); queuePush(); render(); }
+
+/* ---------- penyegerakan awan (Supabase) ---------- */
+const CFG = window.PELAN_CONFIG || {};
+const cloudConfigured = !!(CFG.supabaseUrl && CFG.supabaseKey);
+let sb = null, sbUser = null, syncMsg = "", pushT = null;
+function setSync(msg) {
+  syncMsg = msg;
+  const el = document.getElementById("syncMsg");
+  if (el) el.textContent = msg;
+}
+function queuePush() {
+  if (!sbUser) return;
+  clearTimeout(pushT);
+  pushT = setTimeout(pushCloud, 1200);
+}
+async function pushCloud() {
+  if (!sbUser) return;
+  setSync("Menyegerak…");
+  const { error } = await sb.from("plans").upsert({ user_id: sbUser.id, data: S, updated_at: new Date(S.updatedAt || Date.now()).toISOString() });
+  setSync(error ? "Gagal segerak: " + error.message : "Disegerak " + new Date().toLocaleTimeString("ms-MY"));
+}
+async function pullCloud() {
+  if (!sbUser) return;
+  setSync("Menyemak awan…");
+  const { data, error } = await sb.from("plans").select("data").eq("user_id", sbUser.id).maybeSingle();
+  if (error) { setSync("Gagal baca awan: " + error.message); return; }
+  const remote = data && data.data;
+  if (remote && (Number(remote.updatedAt) || 0) > (S.updatedAt || 0)) {
+    S = normalize(remote); save(); render();
+    setSync("Data terkini dimuatkan dari awan " + new Date().toLocaleTimeString("ms-MY"));
+  } else if (!remote || (S.updatedAt || 0) > (Number(remote.updatedAt) || 0)) {
+    await pushCloud();
+  } else {
+    setSync("Sudah terkini " + new Date().toLocaleTimeString("ms-MY"));
+  }
+}
+function initCloud() {
+  if (!cloudConfigured || !window.supabase) return;
+  sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey);
+  sb.auth.onAuthStateChange((_ev, session) => {
+    const u = session ? session.user : null;
+    const changed = (u && u.id) !== (sbUser && sbUser.id);
+    sbUser = u;
+    if (changed) { render(); if (u) setTimeout(pullCloud, 0); }
+  });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && sbUser) pullCloud(); });
+}
 function toast(msg) {
   const el = document.createElement("div"); el.className = "toast"; el.role = "status"; el.textContent = msg;
   document.body.appendChild(el); setTimeout(() => el.remove(), 2200);
@@ -553,6 +605,18 @@ function vNiaga() {
   </section>`;
 }
 
+function vCloud() {
+  let body;
+  if (!cloudConfigured) body = `<p class="small muted">Belum disediakan. Isi URL dan kunci Supabase dalam fail <code>config.js</code>.</p>`;
+  else if (!sb) body = `<p class="small muted">Pustaka Supabase tidak dapat dimuatkan (mungkin luar talian). Data tetap disimpan dalam peranti ini.</p>`;
+  else if (!sbUser) body = `<p class="small muted">Log masuk untuk simpan data di awan dan guna pada telefon serta komputer.</p>
+    <form class="add" data-form="login"><label>E-mel<input name="email" type="email" required autocomplete="email"></label><button class="primary">Hantar pautan log masuk</button></form>`;
+  else body = `<p style="margin:.2rem 0">Log masuk sebagai <b>${esc(sbUser.email)}</b></p>
+    <p class="small muted" id="syncMsg">${esc(syncMsg)}</p>
+    <div class="row"><button data-act="sync">Segerak sekarang</button><button data-act="logout">Log keluar</button></div>`;
+  return `<section class="card"><h2>Penyegerakan awan</h2>${body}</section>`;
+}
+
 function vTetapan() {
   return `
   <section class="card">
@@ -564,6 +628,7 @@ function vTetapan() {
       <button class="primary">Simpan</button>
     </form>
   </section>
+  ${vCloud()}
   <section class="card">
     <h2>Sandaran</h2>
     <p class="small muted">Data disimpan dalam pelayar ini sahaja. Muat turun sandaran secara berkala.</p>
@@ -590,6 +655,13 @@ document.addEventListener("submit", e => {
   const f = e.target.closest("form[data-form]"); if (!f) return;
   e.preventDefault();
   const d = Object.fromEntries(new FormData(f));
+  if (f.dataset.form === "login") {
+    const btn = f.querySelector("button"); btn.disabled = true;
+    sb.auth.signInWithOtp({ email: d.email.trim(), options: { emailRedirectTo: location.origin + location.pathname } })
+      .then(({ error }) => toast(error ? "Gagal: " + error.message : "Semak e-mel anda untuk pautan log masuk"))
+      .finally(() => { btn.disabled = false; });
+    return;
+  }
   switch (f.dataset.form) {
     case "income": S.incomes.push({ id: uid(), name: d.name.trim(), type: d.type, amount: num(d.amount) }); break;
     case "tx": S.tx.push({ id: uid(), date: d.date, type: d.type, cat: d.cat.trim(), amount: num(d.amount), note: d.note.trim() }); txMonth = d.date.slice(0, 7); break;
@@ -635,7 +707,9 @@ document.addEventListener("click", e => {
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); break;
     }
     case "restore": document.getElementById("restoreFile").click(); break;
-    case "wipe": if (confirm("Padam SEMUA data? Tindakan ini tidak boleh diundur.") && confirm("Pasti? Muat turun sandaran dahulu jika perlu.")) { S = normalize(null); commit(); toast("Semua data dipadam"); } break;
+    case "sync": pullCloud(); break;
+    case "logout": sb.auth.signOut().then(() => { sbUser = null; setSync(""); render(); toast("Telah log keluar. Data kekal dalam peranti ini."); }); break;
+    case "wipe": if (confirm(sbUser ? "Padam SEMUA data, termasuk salinan di awan? Tindakan ini tidak boleh diundur." : "Padam SEMUA data? Tindakan ini tidak boleh diundur.") && confirm("Pasti? Muat turun sandaran dahulu jika perlu.")) { S = normalize(null); commit(); toast("Semua data dipadam"); } break;
   }
 });
 
@@ -658,6 +732,7 @@ document.addEventListener("change", e => {
 
 window.addEventListener("storage", e => { if (e.key === KEY) { S = load(); render(); } });
 render();
+initCloud();
 
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("sw.js").catch(() => {});

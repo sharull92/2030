@@ -19,7 +19,8 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 ## Model data (satu objek `S`)
 ```js
 {
-  v: 1,
+  v: 2,
+  updatedAt: Number,   // ms, untuk penyegerakan awan (v2)
   settings: { name, targetPassive, emergencyMonths },
   savings: Number,
   incomes:     [{ id, name, type: "aktif"|"sampingan"|"pasif", amount }],
@@ -36,10 +37,11 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 `normalize()` menggabungkan data lama dengan nilai lalai — kekalkan apabila menambah medan baru.
 
 ## Storan — PENTING
-- Di claude.ai, app guna `window.claude.use("db")` + `use("user")` untuk simpan ke `data/users/<id>/plan` (peribadi), dan `use("downloads")` untuk sandaran. **API ini hanya wujud dalam paparan artifak claude.ai.**
-- Di luar claude.ai, `window.claude` tiada → app automatik guna `localStorage` (kunci `pelan2030`). Jadi fail ini terus berfungsi secara tempatan.
-- Butang "Muat turun sandaran" bergantung pada `downloads`; untuk versi tempatan, tukar kepada `Blob` + `<a download>`.
-- Data pengguna di claude.ai TIDAK ikut fail ini. Pengguna perlu "Muat turun sandaran" di claude.ai dahulu, kemudian "Pulihkan sandaran" dalam versi baru.
+- Utama: `localStorage` (kunci `pelan2030`) — app berfungsi luar talian tanpa akaun.
+- Awan (pilihan): Supabase. `config.js` mengandungi `supabaseUrl` + kunci publishable/anon (selamat, dilindungi RLS — jangan sekali-kali letak kunci secret/service_role). Jadual `public.plans (user_id, data jsonb, updated_at)` — skema dalam `supabase/schema.sql`.
+- Log masuk melalui pautan e-mel (`signInWithOtp`). Selepas log masuk, app tarik data awan; versi dengan `updatedAt` lebih baharu menang (keseluruhan dokumen). Setiap `commit()` menolak ke awan (debounce 1.2 s). Data ditarik semula apabila tab kembali aktif.
+- Sandaran: `Blob` + `<a download>`; pulih melalui fail JSON.
+- Hosting: Vercel (statik, tiada build). `vercel.json` set `no-cache` untuk `sw.js` dan `config.js`. Service worker guna rangkaian dahulu untuk fail sama-asal, dan tidak mengganggu permintaan ke Supabase/CDN.
 
 ## Gaya reka bentuk
 - Fon: Bricolage Grotesque (tajuk), IBM Plex Sans (teks).
@@ -48,9 +50,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 
 ## Cadangan kerja seterusnya
 - Pecahkan kepada projek (cth. Vite + vanilla/React) atau kekalkan satu fail — tanya pengguna.
-- Jadikan PWA (manifest + service worker) supaya boleh dipasang di telefon dan guna luar talian.
 - Notifikasi tarikh bayar (Notification API / kalendar .ics eksport).
-- Penyegerakan awan (cth. Supabase) dengan log masuk, menggantikan storan claude.ai.
 - Eksport laporan PDF/Excel bulanan.
 - Ujian untuk fungsi kira: `monthsToPay`, `upcoming`, `savCalc`, `calc`.
 

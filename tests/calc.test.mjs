@@ -72,7 +72,8 @@ test("normalize kekalkan data lama dan isi lalai", () => {
   assert.equal(o.gold.have, 5);
   assert.equal(o.gold.target, 30);
   assert.deepEqual(o.tx, []);
-  assert.equal(o.v, 1);
+  assert.equal(o.v, 2);
+  assert.equal(o.updatedAt, 0);
 });
 
 test("trend", () => {
