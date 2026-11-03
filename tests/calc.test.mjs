@@ -1,0 +1,81 @@
+// Jalankan: node --test tests/calc.test.mjs
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
+const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend };")();
+
+test("monthsToPay", () => {
+  assert.equal(L.monthsToPay(0, 10, 100), 0);
+  assert.equal(L.monthsToPay(1200, 0, 100), 12);
+  assert.equal(L.monthsToPay(1000, 12, 10), Infinity); // faedah RM10 = bayaran
+  assert.equal(L.monthsToPay(1000, 10, 0), Infinity);
+  assert.equal(L.monthsToPay(10000, 18, 500), 24);
+});
+
+test("calc: DSR dan campuran", () => {
+  const S = L.normalize({
+    incomes: [{ amount: 4000, type: "aktif" }, { amount: 1000, type: "pasif" }],
+    commitments: [{ amount: 1000 }], debts: [{ balance: 5000, payment: 1000 }],
+    settings: { targetPassive: 2000 }
+  });
+  const c = L.calc(S);
+  assert.equal(c.income, 5000);
+  assert.equal(c.out, 2000);
+  assert.equal(c.balance, 3000);
+  assert.equal(c.dsr, 40);
+  assert.equal(c.dsrLevel, "berhati-hati");
+  assert.equal(c.passivePct, 50);
+  assert.equal(c.emergencyTarget, 12000);
+  assert.equal(L.calc(L.normalize({ incomes: [{ amount: 1000 }], commitments: [{ amount: 300 }] })).dsrLevel, "sihat");
+  assert.equal(L.calc(L.normalize({ incomes: [{ amount: 1000 }], commitments: [{ amount: 700 }] })).dsrLevel, "tinggi");
+});
+
+test("upcoming: tertunggak, dalam 14 hari, dan sudah bayar", () => {
+  const today = new Date(2026, 10, 20); // 20 Nov 2026
+  const S = L.normalize({
+    commitments: [
+      { id: "a", name: "Sewa", amount: 800, day: 25 },
+      { id: "b", name: "Telefon", amount: 80, day: 10 },
+      { id: "c", name: "Insurans", amount: 200, day: 2 },
+      { id: "d", name: "Gym", amount: 100, day: 15 }
+    ],
+    paid: { "d:2026-11": true }
+  });
+  const u = L.upcoming(S, today);
+  const keys = u.map(x => x.key);
+  assert.deepEqual(keys, ["c:2026-11", "b:2026-11", "a:2026-11", "c:2026-12"]);
+  assert.equal(u[0].diff, -18);
+});
+
+test("upcoming: hari 31 dalam bulan pendek", () => {
+  const S = L.normalize({ commitments: [{ id: "x", name: "X", amount: 1, day: 31 }] });
+  const u = L.upcoming(S, new Date(2027, 1, 20)); // 20 Feb 2027
+  assert.equal(u[0].due, "2027-02-28");
+});
+
+test("savCalc", () => {
+  const r = L.savCalc(5000, 15000, "2027-10", new Date(2026, 10, 3));
+  assert.equal(r.months, 12);
+  assert.equal(r.need, 10000);
+  assert.ok(Math.abs(r.perMonth - 833.33) < 0.01);
+  assert.equal(L.savCalc(20, 10, "2027-01", new Date()).perMonth, 0);
+  assert.equal(L.savCalc(0, 10, "2020-01", new Date(2026, 0, 1)).perMonth, Infinity);
+});
+
+test("normalize kekalkan data lama dan isi lalai", () => {
+  const o = L.normalize({ settings: { name: "Ali" }, gold: { have: 5 }, tx: "rosak" });
+  assert.equal(o.settings.name, "Ali");
+  assert.equal(o.settings.targetPassive, 3000);
+  assert.equal(o.gold.have, 5);
+  assert.equal(o.gold.target, 30);
+  assert.deepEqual(o.tx, []);
+  assert.equal(o.v, 1);
+});
+
+test("trend", () => {
+  const t = L.trend([{ date: "2026-11-02", type: "in", amount: 100 }, { date: "2026-10-05", type: "out", amount: 40 }], new Date(2026, 10, 3), 2);
+  assert.deepEqual(t, [{ m: "2026-10", in: 0, out: 40 }, { m: "2026-11", in: 100, out: 0 }]);
+});

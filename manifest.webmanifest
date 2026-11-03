@@ -1,0 +1,12 @@
+{
+  "name": "Pelan 2030",
+  "short_name": "Pelan 2030",
+  "description": "Perancangan kewangan dan kerjaya peribadi hingga 2030",
+  "lang": "ms",
+  "start_url": "pelan-2030.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ECF0ED",
+  "theme_color": "#7A1F2B",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

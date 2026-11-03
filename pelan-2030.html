@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pelan 2030</title>
+<meta name="description" content="Perancangan kewangan dan kerjaya peribadi hingga 31 Disember 2030.">
+<meta name="theme-color" content="#7A1F2B">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#ECF0ED; --card:#FFFFFF; --ink:#17263A; --muted:#5A6676; --line:#D3DAD5;
+  --red:#7A1F2B; --teal:#2C6B66; --amber:#A86A12; --gold:#B8892B;
+  --ok:#2C6B66; --warn:#A86A12; --bad:#7A1F2B;
+  --radius:14px; --shadow:0 1px 2px rgba(23,38,58,.06),0 4px 14px rgba(23,38,58,.05);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F1722; --card:#18222F; --ink:#E7ECEA; --muted:#9AA6B4; --line:#2A3646;
+    --red:#C9566A; --teal:#5AB0A8; --amber:#D9A04A; --gold:#D8B060;
+    --ok:#5AB0A8; --warn:#D9A04A; --bad:#E07386; color-scheme:dark;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F1722; --card:#18222F; --ink:#E7ECEA; --muted:#9AA6B4; --line:#2A3646;
+  --red:#C9566A; --teal:#5AB0A8; --amber:#D9A04A; --gold:#D8B060;
+  --ok:#5AB0A8; --warn:#D9A04A; --bad:#E07386; color-scheme:dark; --shadow:none;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif;
+  padding-bottom:calc(76px + env(safe-area-inset-bottom));-webkit-text-size-adjust:100%}
+h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;line-height:1.15;margin:0 0 .5rem}
+h1{font-size:1.6rem} h2{font-size:1.2rem} h3{font-size:1rem}
+main{max-width:760px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:0 0 14px;box-shadow:var(--shadow)}
+.muted{color:var(--muted)} .small{font-size:.85rem}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.between{justify-content:space-between}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media (max-width:480px){.grid3{grid-template-columns:1fr 1fr}}
+.stat{background:var(--paper);border-radius:10px;padding:10px 12px}
+.stat b{display:block;font-family:"Bricolage Grotesque",sans-serif;font-size:1.25rem;font-variant-numeric:tabular-nums}
+.stat span{font-size:.8rem;color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
+.pos{color:var(--ok)} .neg{color:var(--bad)}
+.pill{display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:99px;background:var(--paper);border:1px solid var(--line)}
+.pill.ok{color:var(--ok);border-color:currentColor} .pill.warn{color:var(--warn);border-color:currentColor} .pill.bad{color:var(--bad);border-color:currentColor}
+.bar{height:10px;background:var(--paper);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+.bar>i{display:block;height:100%;background:var(--teal);border-radius:99px}
+.bar.gold>i{background:var(--gold)} .bar.amber>i{background:var(--amber)}
+.mix{display:flex;height:14px;border-radius:99px;overflow:hidden;background:var(--paper)}
+.mix i{display:block;height:100%}
+ul.list{list-style:none;margin:0;padding:0}
+ul.list li{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line)}
+ul.list li:first-child{border-top:0}
+ul.list .grow{flex:1;min-width:0}
+ul.list .grow > div{overflow-wrap:anywhere}
+form.add{display:grid;gap:8px;margin-top:12px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+label{display:grid;gap:4px;font-size:.8rem;color:var(--muted)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 10px;width:100%;min-width:0}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:9px 14px}
+button.primary{background:var(--red);border-color:var(--red);color:#fff;font-weight:600}
+button.ghost{background:transparent;border-color:transparent;color:var(--muted);padding:6px 8px}
+button.sm{padding:5px 10px;font-size:.85rem}
+button.danger{color:var(--bad);border-color:currentColor;background:transparent}
+:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--teal)}
+/* hero passport stamp */
+.hero{position:relative;overflow:hidden;background:var(--red);color:#fff;border:0}
+.hero .muted{color:rgba(255,255,255,.75)}
+.stamps{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.stamp{border:2px dashed rgba(255,255,255,.7);border-radius:8px;padding:4px 8px;font-family:"Bricolage Grotesque",sans-serif;font-weight:700;transform:rotate(-4deg);opacity:.65}
+.stamp.now{opacity:1;background:rgba(255,255,255,.14);transform:rotate(-2deg)}
+.stamp.past{opacity:.9;text-decoration:line-through}
+.big{font-family:"Bricolage Grotesque",sans-serif;font-size:2.4rem;font-weight:700;line-height:1}
+/* nav */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);
+  display:grid;grid-template-columns:repeat(6,1fr);padding:4px 4px calc(4px + env(safe-area-inset-bottom));z-index:10}
+nav.tabs button{border:0;background:transparent;display:grid;justify-items:center;gap:2px;font-size:.7rem;padding:6px 2px;color:var(--muted)}
+nav.tabs button svg{width:22px;height:22px}
+nav.tabs button[aria-current="page"]{color:var(--red);font-weight:600}
+.empty{color:var(--muted);font-size:.9rem;padding:6px 0}
+.stages{display:flex;gap:4px;margin:8px 0}
+.stages span{flex:1;font-size:.68rem;text-align:center;padding:4px 2px;border-radius:6px;background:var(--paper);color:var(--muted)}
+.stages span.on{background:var(--teal);color:#fff}
+details summary{cursor:pointer;font-weight:600}
+svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans-serif}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:10px;font-size:.9rem;z-index:20}
+@media (prefers-reduced-motion:no-preference){.bar>i{transition:width .4s ease}}
+</style>
+</head>
+<body>
+<main id="app" aria-live="polite"></main>
+<nav class="tabs" aria-label="Navigasi utama" id="nav"></nav>
+<input type="file" id="restoreFile" accept="application/json,.json" hidden>
+
+<script>
+// @logic-start — fungsi tulen (diuji dalam tests/calc.test.mjs)
+const DEFAULTS = () => ({
+  v: 1,
+  settings: { name: "", targetPassive: 3000, emergencyMonths: 6 },
+  savings: 0,
+  incomes: [], commitments: [], debts: [], tx: [], goals: [], ventures: [],
+  paid: {},
+  gold: { have: 0, target: 30, price: 0, by: "2028-12" },
+  asb: { have: 0, s1: 15000, s2: 30000, s1by: "2027-12", s2by: "2030-12" }
+});
+
+function normalize(d) {
+  const b = DEFAULTS();
+  if (!d || typeof d !== "object") return b;
+  const o = Object.assign({}, b, d);
+  o.settings = Object.assign({}, b.settings, d.settings || {});
+  o.gold = Object.assign({}, b.gold, d.gold || {});
+  o.asb = Object.assign({}, b.asb, d.asb || {});
+  for (const k of ["incomes", "commitments", "debts", "tx", "goals", "ventures"]) {
+    if (!Array.isArray(o[k])) o[k] = [];
+  }
+  if (!o.paid || typeof o.paid !== "object") o.paid = {};
+  o.savings = Number(o.savings) || 0;
+  // Migrasi masa depan: if (o.v < 2) { ...; o.v = 2 }
+  o.v = Math.max(1, Number(o.v) || 1);
+  return o;
+}
+
+const sum = (arr, f) => arr.reduce((a, x) => a + (Number(f(x)) || 0), 0);
+
+function calc(S) {
+  const income = sum(S.incomes, x => x.amount);
+  const commit = sum(S.commitments, x => x.amount);
+  const debtPay = sum(S.debts, x => x.payment);
+  const out = commit + debtPay;
+  const balance = income - out;
+  const dsr = income > 0 ? (out / income) * 100 : (out > 0 ? Infinity : 0);
+  const dsrLevel = dsr < 40 ? "sihat" : dsr <= 60 ? "berhati-hati" : "tinggi";
+  const mix = { aktif: 0, sampingan: 0, pasif: 0 };
+  for (const i of S.incomes) if (i.type in mix) mix[i.type] += Number(i.amount) || 0;
+  const target = Number(S.settings.targetPassive) || 0;
+  const passivePct = target > 0 ? Math.min(100, (mix.pasif / target) * 100) : 0;
+  const totalDebt = sum(S.debts, x => x.balance);
+  const emergencyTarget = out * (Number(S.settings.emergencyMonths) || 0);
+  const emergencyPct = emergencyTarget > 0 ? Math.min(100, (S.savings / emergencyTarget) * 100) : 0;
+  return { income, commit, debtPay, out, balance, dsr, dsrLevel, mix, passivePct, totalDebt, emergencyTarget, emergencyPct };
+}
+
+// Bilangan bulan untuk selesaikan hutang (faedah tahunan % dikompaun bulanan).
+function monthsToPay(balance, ratePct, payment) {
+  balance = Number(balance) || 0; payment = Number(payment) || 0;
+  if (balance <= 0) return 0;
+  if (payment <= 0) return Infinity;
+  const r = (Number(ratePct) || 0) / 100 / 12;
+  if (r === 0) return Math.ceil(balance / payment);
+  if (payment <= balance * r) return Infinity;
+  return Math.ceil(-Math.log(1 - (r * balance) / payment) / Math.log(1 + r));
+}
+
+const ym = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+const ymd = d => ym(d) + "-" + String(d.getDate()).padStart(2, "0");
+const dim = (y, m) => new Date(y, m + 1, 0).getDate();
+
+function addMonths(date, n) {
+  const d = new Date(date.getFullYear(), date.getMonth() + n, 1);
+  d.setDate(Math.min(date.getDate(), dim(d.getFullYear(), d.getMonth())));
+  return d;
+}
+
+// Peringatan bayaran: tertunggak bulan ini + akan datang dalam `days` hari.
+function upcoming(S, today, days = 14) {
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const items = [
+    ...S.commitments.map(c => ({ id: c.id, name: c.name, amount: Number(c.amount) || 0, day: Number(c.day), kind: "komitmen" })),
+    ...S.debts.filter(d => (Number(d.balance) || 0) > 0).map(d => ({ id: d.id, name: d.name, amount: Number(d.payment) || 0, day: Number(d.day), kind: "hutang" }))
+  ].filter(i => i.day >= 1 && i.day <= 31);
+  const res = [];
+  for (const it of items) {
+    for (const off of [0, 1]) {
+      const base = new Date(t0.getFullYear(), t0.getMonth() + off, 1);
+      const due = new Date(base.getFullYear(), base.getMonth(), Math.min(it.day, dim(base.getFullYear(), base.getMonth())));
+      const key = it.id + ":" + ym(due);
+      if (S.paid[key]) continue;
+      const diff = Math.round((due - t0) / 86400000);
+      if ((off === 0 && diff < 0) || (diff >= 0 && diff <= days)) {
+        res.push({ ...it, due: ymd(due), key, diff });
+      }
+    }
+  }
+  return res.sort((a, b) => a.diff - b.diff);
+}
+
+// Kiraan simpanan bulanan untuk capai sasaran pada "YYYY-MM".
+function savCalc(have, target, by, today) {
+  have = Number(have) || 0; target = Number(target) || 0;
+  const need = Math.max(0, target - have);
+  const pct = target > 0 ? Math.min(100, (have / target) * 100) : 0;
+  let months = 0;
+  if (by && /^\d{4}-\d{2}$/.test(by)) {
+    const [y, m] = by.split("-").map(Number);
+    months = (y - today.getFullYear()) * 12 + (m - 1 - today.getMonth()) + 1;
+  }
+  months = Math.max(0, months);
+  const perMonth = need === 0 ? 0 : months > 0 ? need / months : Infinity;
+  return { need, pct, months, perMonth };
+}
+
+// Aliran masuk/keluar ikut bulan untuk n bulan terakhir.
+function trend(tx, today, n) {
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const k = ym(addMonths(new Date(today.getFullYear(), today.getMonth(), 1), -i));
+    const rows = tx.filter(t => String(t.date).slice(0, 7) === k);
+    out.push({ m: k, in: sum(rows.filter(t => t.type === "in"), t => t.amount), out: sum(rows.filter(t => t.type === "out"), t => t.amount) });
+  }
+  return out;
+}
+// @logic-end
+</script>
+
+<script>
+"use strict";
+const KEY = "pelan2030";
+const END = new Date(2030, 11, 31);
+const STAGES = ["Idea", "Validasi", "Bina", "Lancar", "Skala"];
+const MIXC = { aktif: "var(--ink)", sampingan: "var(--amber)", pasif: "var(--teal)" };
+const fmtRM = new Intl.NumberFormat("ms-MY", { style: "currency", currency: "MYR", maximumFractionDigits: 0 });
+const RM = n => isFinite(n) ? fmtRM.format(Math.round(n)).replace("MYR", "RM") : "—";
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const BULAN = ["Jan","Feb","Mac","Apr","Mei","Jun","Jul","Ogo","Sep","Okt","Nov","Dis"];
+const fmtYM = k => { const [y, m] = k.split("-"); return BULAN[+m - 1] + " " + y; };
+const fmtD = s => { const [y, m, d] = s.split("-"); return +d + " " + BULAN[+m - 1] + " " + y; };
+const today = () => new Date();
+
+let S = load();
+let tab = (() => { try { return localStorage.getItem(KEY + ":tab") || "ringkasan"; } catch { return "ringkasan"; } })();
+let txMonth = ym(today());
+let trendN = 6;
+
+function load() {
+  try { return normalize(JSON.parse(localStorage.getItem(KEY))); } catch { return normalize(null); }
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { toast("Gagal simpan — storan pelayar penuh atau disekat"); }
+}
+function commit() { save(); render(); }
+function toast(msg) {
+  const el = document.createElement("div"); el.className = "toast"; el.role = "status"; el.textContent = msg;
+  document.body.appendChild(el); setTimeout(() => el.remove(), 2200);
+}
+
+/* ---------- ikon ---------- */
+const I = {
+  ringkasan: '<path d="M3 12l9-8 9 8M5 10v10h14V10"/>',
+  kewangan: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/>',
+  hutang: '<path d="M12 3v18M17 7H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>',
+  pelan: '<rect x="4" y="4" width="16" height="17" rx="2"/><path d="M8 2v4M16 2v4M4 10h16"/>',
+  niaga: '<path d="M4 20V10l8-6 8 6v10M9 20v-6h6v6"/>',
+  tetapan: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>'
+};
+const TABS = [["ringkasan","Ringkasan"],["kewangan","Kewangan"],["hutang","Hutang"],["pelan","Pelan 2030"],["niaga","Niaga"],["tetapan","Tetapan"]];
+const icon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[k]}</svg>`;
+
+/* ---------- komponen ---------- */
+const bar = (pct, cls = "") => `<div class="bar ${cls}" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>`;
+const stat = (label, val, cls = "") => `<div class="stat"><span>${label}</span><b class="${cls}">${val}</b></div>`;
+const del = (list, id) => `<button class="ghost sm" data-act="del" data-list="${list}" data-id="${id}" aria-label="Padam">✕</button>`;
+const dsrPill = c => `<span class="pill ${c.dsrLevel === "sihat" ? "ok" : c.dsrLevel === "tinggi" ? "bad" : "warn"}">DSR ${isFinite(c.dsr) ? c.dsr.toFixed(0) + "%" : "—"} · ${c.dsrLevel}</span>`;
+
+function chart(data) {
+  const W = 320, H = 140, P = 22, max = Math.max(1, ...data.flatMap(d => [d.in, d.out]));
+  const bw = (W - P) / data.length;
+  const bars = data.map((d, i) => {
+    const x = P + i * bw, hi = (d.in / max) * (H - 30), ho = (d.out / max) * (H - 30);
+    return `<rect x="${x + bw * .12}" y="${H - 18 - hi}" width="${bw * .36}" height="${hi}" rx="2" fill="var(--teal)"><title>${fmtYM(d.m)} masuk ${RM(d.in)}</title></rect>
+      <rect x="${x + bw * .52}" y="${H - 18 - ho}" width="${bw * .36}" height="${ho}" rx="2" fill="var(--red)"><title>${fmtYM(d.m)} keluar ${RM(d.out)}</title></rect>
+      <text x="${x + bw / 2}" y="${H - 5}" text-anchor="middle">${BULAN[+d.m.slice(5) - 1]}</text>`;
+  }).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Graf aliran tunai">
+    <line x1="${P}" x2="${W}" y1="${H - 18}" y2="${H - 18}" stroke="var(--line)"/>
+    <text x="0" y="12">${RM(max)}</text>${bars}</svg>
+    <div class="row small muted"><span><span style="color:var(--teal)">■</span> Masuk</span><span><span style="color:var(--red)">■</span> Keluar</span></div>`;
+}
+
+function nextSteps(c) {
+  const s = [];
+  if (!S.incomes.length) s.push("Tambah sumber pendapatan di tab Kewangan.");
+  if (!S.commitments.length && !S.debts.length) s.push("Senaraikan komitmen dan hutang anda.");
+  if (c.dsr >= 40 && isFinite(c.dsr)) s.push("DSR melebihi 40% — fokus bayar hutang faedah tertinggi dahulu.");
+  if (c.emergencyPct < 100 && c.out > 0) s.push(`Bina dana kecemasan: ${RM(c.emergencyTarget - S.savings)} lagi.`);
+  if (!S.goals.length) s.push("Isi matlamat tahunan di tab Pelan 2030 (guna templat).");
+  const g = S.goals.filter(x => !x.done).sort((a, b) => a.year - b.year)[0];
+  if (g) s.push(`Matlamat ${g.year}: ${g.title}`);
+  const v = S.ventures.find(x => x.steps.some(st => !st.done));
+  if (v) s.push(`${v.name}: ${v.steps.find(st => !st.done).t}`);
+  if (c.mix.pasif < (S.settings.targetPassive || 0)) s.push("Teruskan bina pendapatan pasif hingga capai sasaran.");
+  return s.slice(0, 5);
+}
+
+/* ---------- tab ---------- */
+function vRingkasan() {
+  const c = calc(S), t = today();
+  const days = Math.max(0, Math.ceil((END - t) / 86400000));
+  const yr = t.getFullYear();
+  const stamps = [2026, 2027, 2028, 2029, 2030].map(y => `<span class="stamp ${y === yr ? "now" : y < yr ? "past" : ""}">${y}</span>`).join("");
+  const up = upcoming(S, t);
+  const mixT = c.income || 1;
+  const gs = savCalc(S.gold.have, S.gold.target, S.gold.by, t);
+  const as = savCalc(S.asb.have, S.asb.have >= S.asb.s1 ? S.asb.s2 : S.asb.s1, S.asb.have >= S.asb.s1 ? S.asb.s2by : S.asb.s1by, t);
+  return `
+  <section class="card hero">
+    <p class="muted small" style="margin:0">Selamat datang${S.settings.name ? ", " + esc(S.settings.name) : ""}</p>
+    <div class="row between" style="align-items:flex-end">
+      <div><div class="big num">${days.toLocaleString("ms-MY")}</div><div class="muted">hari lagi hingga 31 Dis 2030</div></div>
+    </div>
+    <div class="stamps" aria-label="Tahun pelan">${stamps}</div>
+  </section>
+
+  <section class="card">
+    <div class="row between"><h2>Bulan ini</h2>${dsrPill(c)}</div>
+    <div class="grid3">
+      ${stat("Pendapatan", RM(c.income))}
+      ${stat("Komitmen + hutang", RM(c.out))}
+      ${stat("Baki", RM(c.balance), c.balance >= 0 ? "pos" : "neg")}
+    </div>
+    <h3 style="margin-top:14px">Campuran pendapatan</h3>
+    <div class="mix" aria-hidden="true">${["aktif", "sampingan", "pasif"].map(k => `<i style="width:${c.mix[k] / mixT * 100}%;background:${MIXC[k]}"></i>`).join("")}</div>
+    <div class="row small" style="margin-top:6px">${["aktif", "sampingan", "pasif"].map(k => `<span><span style="color:${MIXC[k]}">■</span> ${k[0].toUpperCase() + k.slice(1)} ${RM(c.mix[k])}</span>`).join("")}</div>
+    <h3 style="margin-top:14px">Sasaran pasif</h3>
+    <div class="row between small"><span>${RM(c.mix.pasif)} / ${RM(S.settings.targetPassive)} sebulan</span><span>${c.passivePct.toFixed(0)}%</span></div>
+    ${bar(c.passivePct)}
+  </section>
+
+  <section class="card">
+    <h2>Peringatan bayaran (14 hari)</h2>
+    ${up.length ? `<ul class="list">${up.map(u => `<li><div class="grow"><div>${esc(u.name)}</div>
+      <div class="small ${u.diff < 0 ? "neg" : "muted"}">${fmtD(u.due)} · ${u.diff < 0 ? "lewat " + (-u.diff) + " hari" : u.diff === 0 ? "hari ini" : "dalam " + u.diff + " hari"}</div></div>
+      <span class="num">${RM(u.amount)}</span><button class="sm" data-act="pay" data-key="${u.key}" data-id="${u.id}" data-kind="${u.kind}" data-amt="${u.amount}" data-name="${esc(u.name)}" data-due="${u.due}">Dah bayar</button></li>`).join("")}</ul>`
+      : `<p class="empty">Tiada bayaran dalam 14 hari akan datang.</p>`}
+  </section>
+
+  <section class="card">
+    <div class="row between"><h2>Trend</h2>
+      <div class="row"><button class="sm" data-act="trend" data-n="6" aria-pressed="${trendN === 6}">6 bln</button><button class="sm" data-act="trend" data-n="12" aria-pressed="${trendN === 12}">12 bln</button></div></div>
+    ${chart(trend(S.tx, t, trendN))}
+  </section>
+
+  <section class="card">
+    <h2>Emas & ASB</h2>
+    <div class="row between small"><span>Emas ${S.gold.have} / ${S.gold.target} g</span><span>${gs.pct.toFixed(0)}%</span></div>
+    ${bar(gs.pct, "gold")}
+    <p class="small muted">${gs.need ? `${(gs.perMonth).toFixed(2)} g sebulan hingga ${fmtYM(S.gold.by)}` : "Sasaran tercapai 🎉"}</p>
+    <div class="row between small"><span>ASB ${RM(S.asb.have)} / ${RM(S.asb.have >= S.asb.s1 ? S.asb.s2 : S.asb.s1)} (stage ${S.asb.have >= S.asb.s1 ? 2 : 1})</span><span>${as.pct.toFixed(0)}%</span></div>
+    ${bar(as.pct, "amber")}
+    <p class="small muted">${as.need ? `${RM(as.perMonth)} sebulan` : "Sasaran tercapai 🎉"}</p>
+  </section>
+
+  <section class="card">
+    <h2>Langkah seterusnya</h2>
+    ${nextSteps(c).map(s => `<p style="margin:.3rem 0">→ ${esc(s)}</p>`).join("") || `<p class="empty">Semua di landasan. Teruskan!</p>`}
+  </section>`;
+}
+
+function vKewangan() {
+  const c = calc(S), t = today();
+  const rows = S.tx.filter(x => String(x.date).slice(0, 7) === txMonth).sort((a, b) => b.date.localeCompare(a.date));
+  const tin = sum(rows.filter(r => r.type === "in"), r => r.amount), tout = sum(rows.filter(r => r.type === "out"), r => r.amount);
+  const gs = savCalc(S.gold.have, S.gold.target, S.gold.by, t);
+  const s1 = savCalc(S.asb.have, S.asb.s1, S.asb.s1by, t), s2 = savCalc(S.asb.have, S.asb.s2, S.asb.s2by, t);
+  return `
+  <section class="card">
+    <h2>Sumber pendapatan</h2>
+    ${S.incomes.length ? `<ul class="list">${S.incomes.map(i => `<li><div class="grow"><div>${esc(i.name)}</div><span class="pill">${i.type}</span></div><span class="num">${RM(i.amount)}</span>${del("incomes", i.id)}</li>`).join("")}</ul>` : `<p class="empty">Belum ada pendapatan.</p>`}
+    <form class="add" data-form="income">
+      <label>Nama<input name="name" required placeholder="cth. Gaji"></label>
+      <label>Jenis<select name="type"><option value="aktif">Aktif</option><option value="sampingan">Sampingan</option><option value="pasif">Pasif</option></select></label>
+      <label>Jumlah sebulan (RM)<input name="amount" type="number" inputmode="decimal" min="0" step="0.01" required></label>
+      <button class="primary">Tambah</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="row between"><h2>Transaksi</h2><input type="month" value="${txMonth}" data-act="txmonth" aria-label="Bulan" style="width:auto"></div>
+    <div class="grid3">${stat("Masuk", RM(tin), "pos")}${stat("Keluar", RM(tout), "neg")}${stat("Bersih", RM(tin - tout), tin - tout >= 0 ? "pos" : "neg")}</div>
+    ${rows.length ? `<ul class="list" style="margin-top:8px">${rows.map(r => `<li><div class="grow"><div>${esc(r.cat)}${r.note ? ` <span class="muted small">· ${esc(r.note)}</span>` : ""}</div><div class="small muted">${fmtD(r.date)}</div></div>
+      <span class="num ${r.type === "in" ? "pos" : "neg"}">${r.type === "in" ? "+" : "−"}${RM(r.amount)}</span>${del("tx", r.id)}</li>`).join("")}</ul>` : `<p class="empty">Tiada transaksi untuk ${fmtYM(txMonth)}.</p>`}
+    <form class="add" data-form="tx">
+      <label>Tarikh<input name="date" type="date" value="${ymd(t)}" required></label>
+      <label>Jenis<select name="type"><option value="out">Keluar</option><option value="in">Masuk</option></select></label>
+      <label>Kategori<input name="cat" required list="cats" placeholder="cth. Makan"></label>
+      <label>Jumlah (RM)<input name="amount" type="number" inputmode="decimal" min="0" step="0.01" required></label>
+      <label>Nota<input name="note"></label>
+      <button class="primary">Rekod</button>
+    </form>
+    <datalist id="cats">${["Gaji","Sampingan","Pasif","Makan","Pengangkutan","Sewa","Utiliti","Komitmen","Hutang","Simpanan","Emas","ASB","Kursus","Lain-lain"].map(x => `<option value="${x}">`).join("")}</datalist>
+  </section>
+
+  <section class="card">
+    <h2>Sasaran emas</h2>
+    <div class="row between small"><span>${S.gold.have} / ${S.gold.target} g · nilai ${RM(S.gold.have * S.gold.price)}</span><span>${gs.pct.toFixed(0)}%</span></div>
+    ${bar(gs.pct, "gold")}
+    <p class="small muted">${gs.need ? `Perlu ${gs.need.toFixed(2)} g lagi · ${isFinite(gs.perMonth) ? gs.perMonth.toFixed(2) + " g sebulan" : "tarikh sasaran sudah lepas"}${S.gold.price ? ` (≈ ${RM(gs.perMonth * S.gold.price)})` : ""}` : "Sasaran tercapai 🎉"}</p>
+    <form class="add" data-form="gold">
+      <label>Ada (gram)<input name="have" type="number" step="0.01" min="0" value="${S.gold.have}"></label>
+      <label>Sasaran (gram)<input name="target" type="number" step="0.01" min="0" value="${S.gold.target}"></label>
+      <label>Harga RM/gram<input name="price" type="number" step="0.01" min="0" value="${S.gold.price}"></label>
+      <label>Menjelang<input name="by" type="month" value="${S.gold.by}"></label>
+      <button>Simpan</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>ASB</h2>
+    <div class="row between small"><span>Stage 1: ${RM(S.asb.s1)} menjelang ${fmtYM(S.asb.s1by)}</span><span>${s1.pct.toFixed(0)}%</span></div>
+    ${bar(s1.pct, "amber")}
+    <p class="small muted">${s1.need ? `${RM(s1.perMonth)} sebulan` : "Stage 1 tercapai ✓"}</p>
+    <div class="row between small"><span>Stage 2: ${RM(S.asb.s2)} menjelang ${fmtYM(S.asb.s2by)}</span><span>${s2.pct.toFixed(0)}%</span></div>
+    ${bar(s2.pct, "amber")}
+    <p class="small muted">${s2.need ? `${RM(s2.perMonth)} sebulan` : "Stage 2 tercapai ✓"}</p>
+    <form class="add" data-form="asb">
+      <label>Baki ASB (RM)<input name="have" type="number" step="0.01" min="0" value="${S.asb.have}"></label>
+      <label>Stage 1 (RM)<input name="s1" type="number" min="0" value="${S.asb.s1}"></label>
+      <label>Stage 1 menjelang<input name="s1by" type="month" value="${S.asb.s1by}"></label>
+      <label>Stage 2 (RM)<input name="s2" type="number" min="0" value="${S.asb.s2}"></label>
+      <label>Stage 2 menjelang<input name="s2by" type="month" value="${S.asb.s2by}"></label>
+      <button>Simpan</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Dana kecemasan</h2>
+    <div class="row between small"><span>${RM(S.savings)} / ${RM(c.emergencyTarget)} (${S.settings.emergencyMonths} bulan perbelanjaan wajib)</span><span>${c.emergencyPct.toFixed(0)}%</span></div>
+    ${bar(c.emergencyPct)}
+    <form class="add" data-form="savings">
+      <label>Simpanan semasa (RM)<input name="savings" type="number" step="0.01" min="0" value="${S.savings}"></label>
+      <button>Simpan</button>
+    </form>
+  </section>`;
+}
+
+function vHutang() {
+  const c = calc(S), t = today();
+  const debts = [...S.debts].sort((a, b) => (Number(b.rate) || 0) - (Number(a.rate) || 0));
+  return `
+  <section class="card">
+    <div class="row between"><h2>Komitmen bulanan</h2>${dsrPill(c)}</div>
+    ${S.commitments.length ? `<ul class="list">${S.commitments.map(x => `<li><div class="grow"><div>${esc(x.name)}</div><div class="small muted">Bayar setiap ${x.day || "—"} haribulan</div></div><span class="num">${RM(x.amount)}</span>${del("commitments", x.id)}</li>`).join("")}</ul>` : `<p class="empty">Tiada komitmen.</p>`}
+    <form class="add" data-form="commitment">
+      <label>Nama<input name="name" required placeholder="cth. Sewa rumah"></label>
+      <label>Jumlah (RM)<input name="amount" type="number" min="0" step="0.01" required></label>
+      <label>Hari bayar<input name="day" type="number" min="1" max="31" required></label>
+      <button class="primary">Tambah</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Hutang <span class="muted small">(avalanche — faedah tertinggi dahulu)</span></h2>
+    <div class="grid2">${stat("Jumlah hutang", RM(c.totalDebt))}${stat("Bayaran sebulan", RM(c.debtPay))}</div>
+    ${debts.length ? `<ol class="list" style="list-style:none;padding:0;margin:8px 0 0">${debts.map((d, i) => {
+      const n = monthsToPay(d.balance, d.rate, d.payment);
+      const end = isFinite(n) ? fmtYM(ym(addMonths(t, n))) : null;
+      return `<li style="display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)"><span class="pill ${i === 0 ? "bad" : ""}">#${i + 1}</span>
+        <div class="grow" style="flex:1;min-width:0"><div>${esc(d.name)} · <span class="muted">${d.rate}%</span></div>
+        <div class="small ${end ? "muted" : "neg"}">${end ? `Selesai ≈ ${end} (${n} bulan)` : "Bayaran tidak menampung faedah"} · hari ${d.day || "—"}</div>
+        <div class="row small" style="margin-top:4px"><label style="display:flex;align-items:center;gap:6px">Baki <input type="number" min="0" step="0.01" value="${d.balance}" data-act="debtbal" data-id="${d.id}" style="width:120px"></label></div></div>
+        <span class="num">${RM(d.payment)}</span>${del("debts", d.id)}</li>`;
+    }).join("")}</ol>
+    <p class="small muted">Tip: bayar minimum untuk semua, lebihan dimasukkan ke hutang #1.</p>` : `<p class="empty">Tiada hutang. 👏</p>`}
+    <form class="add" data-form="debt">
+      <label>Nama<input name="name" required placeholder="cth. Kad kredit"></label>
+      <label>Baki (RM)<input name="balance" type="number" min="0" step="0.01" required></label>
+      <label>Faedah setahun (%)<input name="rate" type="number" min="0" step="0.01" required></label>
+      <label>Bayaran sebulan (RM)<input name="payment" type="number" min="0" step="0.01" required></label>
+      <label>Hari bayar<input name="day" type="number" min="1" max="31"></label>
+      <button class="primary">Tambah</button>
+    </form>
+  </section>`;
+}
+
+const GOAL_TPL = [
+  [2026, "Kerjaya", "Ambil kursus TTT (Train the Trainer)"],
+  [2026, "Kewangan", "Lengkapkan dana kecemasan 6 bulan"],
+  [2027, "Kerjaya", "Daftar sebagai jurulatih bertauliah HRD Corp"],
+  [2027, "Niaga", "Bina modul latihan pematuhan pekerja asing (passport, PLKS, CIDB)"],
+  [2028, "Niaga", "Jalankan 6 sesi latihan berbayar setahun"],
+  [2028, "Teknologi", "Lancar app/produk AI pertama untuk pematuhan pekerja asing"],
+  [2029, "Kewangan", "Pendapatan pasif capai 50% sasaran"],
+  [2030, "Kewangan", "Pendapatan pasif capai sasaran bulanan penuh"]
+];
+function vPelan() {
+  const years = [2026, 2027, 2028, 2029, 2030];
+  const done = S.goals.filter(g => g.done).length;
+  return `
+  <section class="card">
+    <div class="row between"><h2>Pelan 2030</h2><span class="pill">${done}/${S.goals.length} selesai</span></div>
+    ${bar(S.goals.length ? done / S.goals.length * 100 : 0)}
+    <p class="small muted">Laluan cadangan: TTT → HRD Corp → modul pematuhan → app AI → pendapatan pasif.</p>
+    <button data-act="goaltpl">Guna templat cadangan</button>
+  </section>
+  ${years.map(y => {
+    const gs = S.goals.filter(g => +g.year === y);
+    return `<section class="card"><h2>${y}</h2>${gs.length ? `<ul class="list">${gs.map(g => `<li><input type="checkbox" ${g.done ? "checked" : ""} data-act="goaldone" data-id="${g.id}" aria-label="Tanda selesai"><div class="grow"><div style="${g.done ? "text-decoration:line-through;opacity:.6" : ""}">${esc(g.title)}</div><span class="pill">${esc(g.area)}</span></div>${del("goals", g.id)}</li>`).join("")}</ul>` : `<p class="empty">Belum ada matlamat.</p>`}</section>`;
+  }).join("")}
+  <section class="card">
+    <h2>Tambah matlamat</h2>
+    <form class="add" data-form="goal">
+      <label>Tahun<select name="year">${years.map(y => `<option>${y}</option>`).join("")}</select></label>
+      <label>Bidang<select name="area"><option>Kerjaya</option><option>Kewangan</option><option>Niaga</option><option>Teknologi</option><option>Peribadi</option></select></label>
+      <label style="grid-column:1/-1">Matlamat<input name="title" required></label>
+      <button class="primary">Tambah</button>
+    </form>
+  </section>`;
+}
+
+const VENTURE_STEPS = ["Kenal pasti masalah pelanggan", "Temu bual 5 bakal pelanggan", "Bina versi minimum", "Dapatkan pelanggan berbayar pertama", "Automasi dan skala"];
+const VENTURE_TPL = [
+  ["Latihan pematuhan pekerja asing", "Latihan", 3000],
+  ["App AI semakan dokumen PLKS/passport", "Produk AI", 2000],
+  ["Templat & SOP HR pekerja asing (produk digital)", "Produk digital", 800],
+  ["Khidmat nasihat pendaftaran CIDB", "Perundingan", 1500]
+];
+function vNiaga() {
+  return `
+  <section class="card">
+    <h2>Projek niaga</h2>
+    <p class="small muted">Peringkat: ${STAGES.join(" → ")}</p>
+    <details><summary>Templat idea</summary><ul class="list">${VENTURE_TPL.map((v, i) => `<li><div class="grow"><div>${esc(v[0])}</div><span class="small muted">${esc(v[1])} · sasaran ${RM(v[2])}/bln</span></div><button class="sm" data-act="venturetpl" data-i="${i}">Tambah</button></li>`).join("")}</ul></details>
+  </section>
+  ${S.ventures.map(v => {
+    const d = v.steps.filter(s => s.done).length;
+    return `<section class="card">
+      <div class="row between"><div><h3 style="margin:0">${esc(v.name)}</h3><span class="small muted">${esc(v.kind)} · sasaran ${RM(v.target)}/bln</span></div>${del("ventures", v.id)}</div>
+      <div class="stages">${STAGES.map((s, i) => `<span class="${i <= v.stage ? "on" : ""}">${s}</span>`).join("")}</div>
+      <div class="row"><button class="sm" data-act="stage" data-id="${v.id}" data-d="-1" ${v.stage <= 0 ? "disabled" : ""}>← Undur</button><button class="sm" data-act="stage" data-id="${v.id}" data-d="1" ${v.stage >= 4 ? "disabled" : ""}>Maju →</button><span class="small muted">${d}/${v.steps.length} langkah</span></div>
+      <ul class="list" style="margin-top:6px">${v.steps.map((s, i) => `<li><input type="checkbox" ${s.done ? "checked" : ""} data-act="step" data-id="${v.id}" data-i="${i}" aria-label="Tanda langkah"><div class="grow" style="${s.done ? "text-decoration:line-through;opacity:.6" : ""}">${esc(s.t)}</div><button class="ghost sm" data-act="delstep" data-id="${v.id}" data-i="${i}" aria-label="Padam langkah">✕</button></li>`).join("")}</ul>
+      <form class="add" data-form="step" data-id="${v.id}" style="grid-template-columns:1fr auto"><input name="t" required placeholder="Langkah baru" aria-label="Langkah baru"><button>Tambah</button></form>
+    </section>`;
+  }).join("") || `<section class="card"><p class="empty">Belum ada projek. Guna templat atau tambah di bawah.</p></section>`}
+  <section class="card">
+    <h2>Projek baru</h2>
+    <form class="add" data-form="venture">
+      <label>Nama<input name="name" required></label>
+      <label>Jenis<input name="kind" placeholder="cth. Produk AI"></label>
+      <label>Sasaran RM/bln<input name="target" type="number" min="0"></label>
+      <button class="primary">Tambah</button>
+    </form>
+  </section>`;
+}
+
+function vTetapan() {
+  return `
+  <section class="card">
+    <h2>Profil</h2>
+    <form class="add" data-form="settings">
+      <label>Nama<input name="name" value="${esc(S.settings.name)}"></label>
+      <label>Sasaran pasif (RM/bln)<input name="targetPassive" type="number" min="0" value="${S.settings.targetPassive}"></label>
+      <label>Dana kecemasan (bulan)<input name="emergencyMonths" type="number" min="0" max="24" value="${S.settings.emergencyMonths}"></label>
+      <button class="primary">Simpan</button>
+    </form>
+  </section>
+  <section class="card">
+    <h2>Sandaran</h2>
+    <p class="small muted">Data disimpan dalam pelayar ini sahaja. Muat turun sandaran secara berkala.</p>
+    <div class="row"><button data-act="backup">Muat turun sandaran</button><button data-act="restore">Pulihkan sandaran</button></div>
+  </section>
+  <section class="card">
+    <h2>Zon bahaya</h2>
+    <button class="danger" data-act="wipe">Padam semua data</button>
+  </section>
+  <p class="small muted" style="text-align:center">Pelan 2030 · skema v${S.v}</p>`;
+}
+
+const VIEWS = { ringkasan: vRingkasan, kewangan: vKewangan, hutang: vHutang, pelan: vPelan, niaga: vNiaga, tetapan: vTetapan };
+
+function render() {
+  if (!VIEWS[tab]) tab = "ringkasan";
+  document.getElementById("app").innerHTML = VIEWS[tab]();
+  document.getElementById("nav").innerHTML = TABS.map(([k, l]) => `<button data-tab="${k}" ${k === tab ? 'aria-current="page"' : ""}>${icon(k)}<span>${l}</span></button>`).join("");
+}
+
+/* ---------- peristiwa ---------- */
+const num = v => Number(v) || 0;
+document.addEventListener("submit", e => {
+  const f = e.target.closest("form[data-form]"); if (!f) return;
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(f));
+  switch (f.dataset.form) {
+    case "income": S.incomes.push({ id: uid(), name: d.name.trim(), type: d.type, amount: num(d.amount) }); break;
+    case "tx": S.tx.push({ id: uid(), date: d.date, type: d.type, cat: d.cat.trim(), amount: num(d.amount), note: d.note.trim() }); txMonth = d.date.slice(0, 7); break;
+    case "gold": Object.assign(S.gold, { have: num(d.have), target: num(d.target), price: num(d.price), by: d.by || S.gold.by }); toast("Disimpan"); break;
+    case "asb": Object.assign(S.asb, { have: num(d.have), s1: num(d.s1), s2: num(d.s2), s1by: d.s1by || S.asb.s1by, s2by: d.s2by || S.asb.s2by }); toast("Disimpan"); break;
+    case "savings": S.savings = num(d.savings); toast("Disimpan"); break;
+    case "commitment": S.commitments.push({ id: uid(), name: d.name.trim(), amount: num(d.amount), day: num(d.day) }); break;
+    case "debt": S.debts.push({ id: uid(), name: d.name.trim(), balance: num(d.balance), rate: num(d.rate), payment: num(d.payment), day: num(d.day) }); break;
+    case "goal": S.goals.push({ id: uid(), year: num(d.year), area: d.area, title: d.title.trim(), done: false }); break;
+    case "venture": S.ventures.push({ id: uid(), name: d.name.trim(), kind: d.kind.trim() || "Projek", target: num(d.target), stage: 0, steps: VENTURE_STEPS.map(t => ({ t, done: false })) }); break;
+    case "step": { const v = S.ventures.find(x => x.id === f.dataset.id); if (v) v.steps.push({ t: d.t.trim(), done: false }); break; }
+    case "settings": Object.assign(S.settings, { name: d.name.trim(), targetPassive: num(d.targetPassive), emergencyMonths: num(d.emergencyMonths) }); toast("Disimpan"); break;
+  }
+  commit();
+});
+
+document.addEventListener("click", e => {
+  const tb = e.target.closest("[data-tab]");
+  if (tb) { tab = tb.dataset.tab; try { localStorage.setItem(KEY + ":tab", tab); } catch {} render(); window.scrollTo(0, 0); return; }
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const { act, id } = b.dataset;
+  switch (act) {
+    case "del": if (confirm("Padam item ini?")) { S[b.dataset.list] = S[b.dataset.list].filter(x => x.id !== id); commit(); } break;
+    case "pay": {
+      S.paid[b.dataset.key] = true;
+      const amt = num(b.dataset.amt);
+      S.tx.push({ id: uid(), date: ymd(today()), type: "out", cat: b.dataset.kind === "hutang" ? "Hutang" : "Komitmen", amount: amt, note: b.dataset.name, link: b.dataset.key });
+      if (b.dataset.kind === "hutang") { const d = S.debts.find(x => x.id === id); if (d) d.balance = Math.max(0, num(d.balance) - amt); }
+      toast("Direkod sebagai transaksi"); commit(); break;
+    }
+    case "trend": trendN = num(b.dataset.n); render(); break;
+    case "goaltpl": {
+      const have = new Set(S.goals.map(g => g.title));
+      GOAL_TPL.forEach(([year, area, title]) => { if (!have.has(title)) S.goals.push({ id: uid(), year, area, title, done: false }); });
+      toast("Templat ditambah"); commit(); break;
+    }
+    case "venturetpl": { const [name, kind, target] = VENTURE_TPL[num(b.dataset.i)]; S.ventures.push({ id: uid(), name, kind, target, stage: 0, steps: VENTURE_STEPS.map(t => ({ t, done: false })) }); commit(); break; }
+    case "stage": { const v = S.ventures.find(x => x.id === id); if (v) { v.stage = Math.max(0, Math.min(4, v.stage + num(b.dataset.d))); commit(); } break; }
+    case "delstep": { const v = S.ventures.find(x => x.id === id); if (v) { v.steps.splice(num(b.dataset.i), 1); commit(); } break; }
+    case "backup": {
+      const blob = new Blob([JSON.stringify(S, null, 2)], { type: "application/json" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `pelan2030-sandaran-${ymd(today())}.json`;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); break;
+    }
+    case "restore": document.getElementById("restoreFile").click(); break;
+    case "wipe": if (confirm("Padam SEMUA data? Tindakan ini tidak boleh diundur.") && confirm("Pasti? Muat turun sandaran dahulu jika perlu.")) { S = normalize(null); commit(); toast("Semua data dipadam"); } break;
+  }
+});
+
+document.addEventListener("change", e => {
+  const el = e.target;
+  if (el.id === "restoreFile" && el.files[0]) {
+    el.files[0].text().then(txt => {
+      const d = JSON.parse(txt);
+      if (!confirm("Ganti data semasa dengan sandaran ini?")) return;
+      S = normalize(d); commit(); toast("Sandaran dipulihkan");
+    }).catch(() => toast("Fail sandaran tidak sah")).finally(() => { el.value = ""; });
+    return;
+  }
+  const act = el.dataset.act; if (!act) return;
+  if (act === "txmonth" && el.value) { txMonth = el.value; render(); }
+  if (act === "goaldone") { const g = S.goals.find(x => x.id === el.dataset.id); if (g) { g.done = el.checked; commit(); } }
+  if (act === "step") { const v = S.ventures.find(x => x.id === el.dataset.id); if (v) { v.steps[num(el.dataset.i)].done = el.checked; commit(); } }
+  if (act === "debtbal") { const d = S.debts.find(x => x.id === el.dataset.id); if (d) { d.balance = num(el.value); commit(); } }
+});
+
+window.addEventListener("storage", e => { if (e.key === KEY) { S = load(); render(); } });
+render();
+
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
