@@ -267,6 +267,25 @@ function emergencyCalc(S, today) {
   return { s1, s2, stage };
 }
 
+// Semua duit keluar bulan ini: transaksi keluar (kecuali bayaran bil kad — belanja kad sudah dikira)
+// + belanja kad kredit; serta komitmen/hutang bulan ini yang belum ditanda "Dah bayar".
+function monthOut(S, today) {
+  const k = ym(today);
+  const inMonth = t => String(t.date).slice(0, 7) === k;
+  const txOut = S.tx.filter(t => t.type === "out" && inMonth(t) && t.cat !== "Kad kredit");
+  const cardSpend = S.cardTx.filter(t => t.type === "belanja" && inMonth(t));
+  const byCat = {};
+  for (const t of [...txOut, ...cardSpend]) { const c = String(t.cat || "Lain-lain").trim() || "Lain-lain"; byCat[c] = (byCat[c] || 0) + (Number(t.amount) || 0); }
+  const pendingItems = [
+    ...S.commitments.map(c => ({ id: c.id, amount: Number(c.amount) || 0 })),
+    ...S.debts.filter(d => (Number(d.balance) || 0) > 0).map(d => ({ id: d.id, amount: Number(d.payment) || 0 }))
+  ].filter(i => !S.paid[i.id + ":" + k]);
+  const spent = sum(txOut, t => t.amount) + sum(cardSpend, t => t.amount);
+  const pending = sum(pendingItems, i => i.amount);
+  const received = sum(S.tx.filter(t => t.type === "in" && inMonth(t)), t => t.amount);
+  return { spent, pending, total: spent + pending, received, byCat, cardSpend: sum(cardSpend, t => t.amount) };
+}
+
 // Item bayaran berulang (komitmen, hutang aktif, kad dengan baki) untuk kalendar.
 function billItems(S, today) {
   return [
@@ -634,6 +653,9 @@ function nextSteps(c) {
 /* ---------- tab ---------- */
 function vRingkasan() {
   const c = calc(S), t = today();
+  const mo = monthOut(S, t);
+  const incomeM = Math.max(c.income, mo.received);
+  const baki = incomeM - mo.total;
   const days = Math.max(0, Math.ceil((END - t) / 86400000));
   const yr = t.getFullYear();
   const stamps = [2026, 2027, 2028, 2029, 2030].map(y => `<span class="stamp ${y === yr ? "now" : y < yr ? "past" : ""}">${y}</span>`).join("");
@@ -655,10 +677,12 @@ function vRingkasan() {
   <section class="card">
     <div class="row between"><h2>Bulan ini</h2>${dsrPill(c)}</div>
     <div class="grid3">
-      ${stat("Pendapatan", RM(c.income))}
-      ${stat("Komitmen + hutang", RM(c.out))}
-      ${stat("Baki", RM(c.balance), c.balance >= 0 ? "pos" : "neg")}
+      <div class="stat"><span>Pendapatan</span><b>${RM(incomeM)}</b>${mo.received && c.income ? `<span>Diterima ${RM(mo.received)}</span>` : ""}</div>
+      <div class="stat"><span>Duit keluar</span><b class="${mo.spent ? "neg" : ""}">${RM(mo.spent)}</b>${mo.pending ? `<span>+ ${RM(mo.pending)} komitmen belum bayar</span>` : ""}</div>
+      <div class="stat"><span>${mo.pending ? "Baki dijangka" : "Baki"}</span><b class="${baki >= 0 ? "pos" : "neg"}">${RM(baki)}</b></div>
     </div>
+    ${Object.keys(mo.byCat).length ? `<h3 style="margin-top:14px">Duit keluar ikut kategori</h3>
+    <ul class="list">${Object.entries(mo.byCat).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<li style="padding:6px 0"><div class="grow">${esc(n)}<div class="bar" style="margin-top:4px;height:6px"><i style="width:${(v / mo.spent * 100).toFixed(1)}%;background:var(--red)"></i></div></div><span class="num">${RM(v)}</span></li>`).join("")}</ul>` : ""}
     <h3 style="margin-top:14px">Campuran pendapatan</h3>
     <div class="mix" aria-hidden="true">${["aktif", "sampingan", "pasif"].map(k => `<i style="width:${c.mix[k] / mixT * 100}%;background:${MIXC[k]}"></i>`).join("")}</div>
     <div class="row small" style="margin-top:6px">${["aktif", "sampingan", "pasif"].map(k => `<span><span style="color:${MIXC[k]}">■</span> ${k[0].toUpperCase() + k.slice(1)} ${RM(c.mix[k])}</span>`).join("")}</div>

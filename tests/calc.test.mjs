@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -219,4 +219,30 @@ test("mergePlan: updatedAt ambil yang terbaru; tiada perubahan → sama", () => 
   const m = L.mergePlan(S, S, R);
   assert.equal(m.updatedAt, 9);
   assert.ok(L.sameData(m, S));
+});
+
+test("monthOut: semua duit keluar bulan ini tanpa kira dua kali", () => {
+  const S = L.normalize({
+    commitments: [{ id: "sewa", amount: 900, day: 5 }, { id: "net", amount: 120, day: 20 }],
+    debts: [{ id: "kereta", balance: 20000, payment: 800, day: 7 }, { id: "habis", balance: 0, payment: 300, day: 1 }],
+    paid: { "sewa:2026-11": true },
+    tx: [
+      { date: "2026-11-01", type: "out", cat: "U-MOBILE", amount: 72 },
+      { date: "2026-11-05", type: "out", cat: "Komitmen", amount: 900 },
+      { date: "2026-11-06", type: "out", cat: "Kad kredit", amount: 500 },
+      { date: "2026-11-02", type: "in", cat: "Gaji", amount: 4782 },
+      { date: "2026-10-30", type: "out", cat: "Makan", amount: 99 }
+    ],
+    cardTx: [
+      { cardId: "k", date: "2026-11-03", type: "belanja", amount: 60, cat: "Minyak" },
+      { cardId: "k", date: "2026-11-01", type: "awal", amount: 1000, cat: "Baki awal" },
+      { cardId: "k", date: "2026-11-06", type: "bayar", amount: 500 }
+    ]
+  });
+  const m = L.monthOut(S, new Date(2026, 10, 10));
+  assert.equal(m.spent, 72 + 900 + 60);       // bayaran bil kad & baki awal tidak dikira
+  assert.equal(m.pending, 120 + 800);          // sewa sudah dibayar; hutang selesai diabaikan
+  assert.equal(m.total, 1952);
+  assert.equal(m.received, 4782);
+  assert.deepEqual(m.byCat, { "U-MOBILE": 72, Komitmen: 900, Minyak: 60 });
 });
