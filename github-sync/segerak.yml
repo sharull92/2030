@@ -34,8 +34,9 @@ jobs:
 
       - name: Commit jika ada perubahan
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          # Commit atas nama pemilik repo (bukan bot) — Vercel Hobby tidak deploy commit daripada bot.
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
           git add -A
           if git diff --cached --quiet; then
             echo "Tiada perubahan."

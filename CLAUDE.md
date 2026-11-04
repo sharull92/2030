@@ -51,7 +51,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 
 ## Aliran kerja deploy
 - Kod dibangunkan di `sharull92/2030` (branch `ccr-e881134b-pdcvan`).
-- Repo pengguna `hrsahrulsazly-bit/2030` ada GitHub Action `.github/workflows/segerak.yml` (salinan di `github-sync/segerak.yml`) yang menarik branch ini setiap 15 minit dan commit ke `main` — kecuali `config.js` dan `.github/`. Vercel deploy daripada `main`.
+- Repo pengguna `hrsahrulsazly-bit/2030` ada GitHub Action `.github/workflows/segerak.yml` (salinan di `github-sync/segerak.yml`) yang menarik branch ini setiap 15 minit dan commit ke `main` — kecuali `config.js` dan `.github/`. Commit dibuat atas nama `github.actor` (bukan bot) kerana Vercel Hobby tidak deploy commit bot. Vercel deploy daripada `main`. Perubahan pada fail workflow mesti disalin manual oleh pengguna (folder `.github/` dikecualikan).
 - Jadi: cukup push ke branch ini; jangan ubah `config.js` dengan kunci sebenar di sini.
 
 ## Gaya reka bentuk
