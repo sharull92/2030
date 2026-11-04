@@ -1,0 +1,45 @@
+# Salin fail ini ke repo hrsahrulsazly-bit/2030 di laluan:
+#   .github/workflows/segerak.yml
+# Ia menarik versi terkini app dari sharull92/2030 (branch ccr-e881134b-pdcvan)
+# setiap 15 minit, dan commit ke main jika ada perubahan. Vercel akan deploy sendiri.
+# config.js (kunci Supabase anda) dan folder .github TIDAK disentuh.
+name: Segerak app terkini
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: segerak
+  cancel-in-progress: false
+
+jobs:
+  segerak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ambil fail terkini
+        run: |
+          git clone --depth 1 -b ccr-e881134b-pdcvan https://github.com/sharull92/2030.git /tmp/sumber
+          rsync -a --delete \
+            --exclude ".git/" \
+            --exclude ".github/" \
+            --exclude "config.js" \
+            /tmp/sumber/ ./
+
+      - name: Commit jika ada perubahan
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Tiada perubahan."
+          else
+            git commit -m "Segerak app terkini dari sharull92/2030"
+            git push
+          fi

@@ -109,11 +109,12 @@ svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans
 <script>
 // @logic-start — fungsi tulen (diuji dalam tests/calc.test.mjs)
 const DEFAULTS = () => ({
-  v: 2,
+  v: 3,
   updatedAt: 0,
   settings: { name: "", targetPassive: 3000, emergencyMonths: 6 },
   savings: 0,
   incomes: [], commitments: [], debts: [], tx: [], goals: [], ventures: [],
+  cards: [], cardTx: [],
   paid: {},
   gold: { have: 0, target: 30, price: 0, by: "2028-12" },
   asb: { have: 0, s1: 15000, s2: 30000, s1by: "2027-12", s2by: "2030-12" }
@@ -126,7 +127,7 @@ function normalize(d) {
   o.settings = Object.assign({}, b.settings, d.settings || {});
   o.gold = Object.assign({}, b.gold, d.gold || {});
   o.asb = Object.assign({}, b.asb, d.asb || {});
-  for (const k of ["incomes", "commitments", "debts", "tx", "goals", "ventures"]) {
+  for (const k of ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx"]) {
     if (!Array.isArray(o[k])) o[k] = [];
   }
   if (!o.paid || typeof o.paid !== "object") o.paid = {};
@@ -134,6 +135,8 @@ function normalize(d) {
   o.v = Math.max(1, Number(o.v) || 1);
   // v1 → v2: tambah cap masa `updatedAt` untuk penyegerakan awan.
   if (o.v < 2) { o.updatedAt = Number(o.updatedAt) || 0; o.v = 2; }
+  // v2 → v3: kad kredit (cards, cardTx) — tatasusunan kosong sudah diisi di atas.
+  if (o.v < 3) o.v = 3;
   o.updatedAt = Number(o.updatedAt) || 0;
   return o;
 }
@@ -179,12 +182,32 @@ function addMonths(date, n) {
   return d;
 }
 
+// Ringkasan satu kad kredit: baki, penggunaan had, belanja bulan, kategori.
+function cardCalc(S, card, today) {
+  const rows = S.cardTx.filter(t => t.cardId === card.id);
+  const spend = sum(rows.filter(t => t.type === "belanja" || t.type === "awal"), t => t.amount);
+  const paidAmt = sum(rows.filter(t => t.type === "bayar"), t => t.amount);
+  const balance = Math.max(0, spend - paidAmt);
+  const limit = Number(card.limit) || 0;
+  const util = limit > 0 ? (balance / limit) * 100 : 0;
+  const k = ym(today);
+  const month = rows.filter(t => t.type === "belanja" && String(t.date).slice(0, 7) === k);
+  const monthSpend = sum(month, t => t.amount);
+  const byCat = {};
+  for (const t of month) byCat[t.cat || "Lain-lain"] = (byCat[t.cat || "Lain-lain"] || 0) + (Number(t.amount) || 0);
+  const minPay = balance > 0 ? Math.min(balance, Math.max(50, balance * 0.05)) : 0;
+  const interest = balance * (Number(card.rate) || 0) / 100 / 12;
+  const level = util < 30 ? "sihat" : util <= 70 ? "berhati-hati" : "tinggi";
+  return { balance, limit, util, monthSpend, byCat, minPay, interest, level, available: Math.max(0, limit - balance) };
+}
+
 // Peringatan bayaran: tertunggak bulan ini + akan datang dalam `days` hari.
 function upcoming(S, today, days = 14) {
   const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const items = [
     ...S.commitments.map(c => ({ id: c.id, name: c.name, amount: Number(c.amount) || 0, day: Number(c.day), kind: "komitmen" })),
-    ...S.debts.filter(d => (Number(d.balance) || 0) > 0).map(d => ({ id: d.id, name: d.name, amount: Number(d.payment) || 0, day: Number(d.day), kind: "hutang" }))
+    ...S.debts.filter(d => (Number(d.balance) || 0) > 0).map(d => ({ id: d.id, name: d.name, amount: Number(d.payment) || 0, day: Number(d.day), kind: "hutang" })),
+    ...(S.cards || []).map(c => ({ id: c.id, name: "Kad " + c.name, amount: cardCalc(S, c, today).balance, day: Number(c.dueDay), kind: "kad" })).filter(c => c.amount > 0)
   ].filter(i => i.day >= 1 && i.day <= 31);
   const res = [];
   for (const it of items) {
@@ -320,7 +343,7 @@ const I = {
   niaga: '<path d="M4 20V10l8-6 8 6v10M9 20v-6h6v6"/>',
   tetapan: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>'
 };
-const TABS = [["ringkasan","Ringkasan"],["kewangan","Kewangan"],["hutang","Hutang"],["pelan","Pelan 2030"],["niaga","Niaga"],["tetapan","Tetapan"]];
+const TABS = [["ringkasan","Ringkasan"],["kewangan","Kewangan"],["hutang","Hutang/Kad"],["pelan","Pelan 2030"],["niaga","Niaga"],["tetapan","Tetapan"]];
 const icon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[k]}</svg>`;
 
 /* ---------- komponen ---------- */
@@ -350,6 +373,7 @@ function nextSteps(c) {
   if (!S.commitments.length && !S.debts.length) s.push("Senaraikan komitmen dan hutang anda.");
   if (c.dsr >= 40 && isFinite(c.dsr)) s.push("DSR melebihi 40% — fokus bayar hutang faedah tertinggi dahulu.");
   if (c.emergencyPct < 100 && c.out > 0) s.push(`Bina dana kecemasan: ${RM(c.emergencyTarget - S.savings)} lagi.`);
+  for (const cd of S.cards) { const k = cardCalc(S, cd, today()); if (k.util >= 30) s.push(`Kad ${cd.name} guna ${k.util.toFixed(0)}% had — cuba kurangkan bawah 30%.`); }
   if (!S.goals.length) s.push("Isi matlamat tahunan di tab Pelan 2030 (guna templat).");
   const g = S.goals.filter(x => !x.done).sort((a, b) => a.year - b.year)[0];
   if (g) s.push(`Matlamat ${g.year}: ${g.title}`);
@@ -500,10 +524,66 @@ function vKewangan() {
   </section>`;
 }
 
+const CARD_CATS = ["Makan", "Minyak", "Barang dapur", "Bil", "Belian dalam talian", "Pakaian", "Kesihatan", "Kursus", "Perjalanan", "Lain-lain"];
+let cardMonth = ym(today()), cardFilter = "";
+function vKad() {
+  const t = today();
+  const cards = S.cards.map(c => ({ c, k: cardCalc(S, c, t) }));
+  const totBal = sum(cards, x => x.k.balance), totLim = sum(cards, x => x.k.limit);
+  const totUtil = totLim > 0 ? totBal / totLim * 100 : 0;
+  const rows = S.cardTx.filter(x => String(x.date).slice(0, 7) === cardMonth && (!cardFilter || x.cardId === cardFilter)).sort((a, b) => b.date.localeCompare(a.date));
+  const mSpend = sum(rows.filter(r => r.type === "belanja"), r => r.amount), mPaid = sum(rows.filter(r => r.type === "bayar"), r => r.amount);
+  const cname = id => (S.cards.find(c => c.id === id) || { name: "(kad dipadam)" }).name;
+  const lvl = l => l === "sihat" ? "ok" : l === "tinggi" ? "bad" : "warn";
+  return `
+  <section class="card">
+    <div class="row between"><h2>Kad kredit</h2>${cards.length ? `<span class="pill ${lvl(totUtil < 30 ? "sihat" : totUtil <= 70 ? "x" : "tinggi")}">Guna ${totUtil.toFixed(0)}% had</span>` : ""}</div>
+    ${cards.length ? `<div class="grid2">${stat("Baki semua kad", RM(totBal), totBal ? "neg" : "")}${stat("Had tersedia", RM(totLim - totBal))}</div>
+    ${cards.map(({ c, k }) => `<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+      <div class="row between"><div><b>${esc(c.name)}</b> <span class="small muted">· bayar ${c.dueDay || "—"} hb${c.rate ? ` · ${c.rate}%` : ""}</span></div>${del("cards", c.id)}</div>
+      <div class="row between small" style="margin-top:4px"><span>Baki ${RM(k.balance)} / had ${RM(k.limit)}</span><span class="pill ${lvl(k.level)}">${k.util.toFixed(0)}%</span></div>
+      ${bar(k.util, k.util > 70 ? "" : "amber")}
+      <div class="grid3" style="margin-top:8px">${stat("Belanja bulan ini", RM(k.monthSpend))}${stat("Bayaran minimum ≈", RM(k.minPay))}${stat("Faedah sebulan jika tak bayar penuh ≈", RM(k.interest))}</div>
+      ${Object.keys(k.byCat).length ? `<p class="small muted" style="margin:.5rem 0 0">${Object.entries(k.byCat).sort((a, b) => b[1] - a[1]).map(([n, v]) => `${esc(n)} ${RM(v)}`).join(" · ")}</p>` : ""}
+      ${k.balance > 0 ? `<form class="add" data-form="cardpay" data-id="${c.id}" style="grid-template-columns:1fr auto"><input name="amount" type="number" min="0" step="0.01" value="${k.balance.toFixed(2)}" aria-label="Jumlah bayaran"><button>Rekod bayaran kad</button></form>` : ""}
+    </div>`).join("")}
+    ${totUtil >= 30 ? `<p class="small muted">Tip: kekalkan penggunaan bawah 30% had dan bayar penuh setiap bulan untuk elak caj faedah.</p>` : ""}` : `<p class="empty">Belum ada kad. Tambah kad di bawah.</p>`}
+    <details style="margin-top:12px"><summary>Tambah kad</summary>
+    <form class="add" data-form="card">
+      <label>Nama kad<input name="name" required placeholder="cth. Maybank Visa"></label>
+      <label>Had kredit (RM)<input name="limit" type="number" min="0" step="0.01" required></label>
+      <label>Hari tarikh akhir bayar<input name="dueDay" type="number" min="1" max="31"></label>
+      <label>Faedah setahun (%)<input name="rate" type="number" min="0" step="0.01" value="15"></label>
+      <label>Baki semasa (RM)<input name="opening" type="number" min="0" step="0.01" value="0"></label>
+      <button class="primary">Tambah kad</button>
+    </form></details>
+  </section>
+
+  ${S.cards.length ? `<section class="card">
+    <h2>Rekod penggunaan kad</h2>
+    <form class="add" data-form="cardtx">
+      <label>Kad<select name="cardId">${S.cards.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></label>
+      <label>Tarikh<input name="date" type="date" value="${ymd(t)}" required></label>
+      <label>Jumlah (RM)<input name="amount" type="number" inputmode="decimal" min="0" step="0.01" required></label>
+      <label>Kategori<input name="cat" list="cardcats" required placeholder="cth. Minyak"></label>
+      <label>Kedai / nota<input name="note"></label>
+      <button class="primary">Rekod belanja</button>
+    </form>
+    <datalist id="cardcats">${CARD_CATS.map(x => `<option value="${x}">`).join("")}</datalist>
+    <div class="row between" style="margin-top:14px">
+      <select data-act="cardfilter" aria-label="Tapis kad" style="width:auto"><option value="">Semua kad</option>${S.cards.map(c => `<option value="${c.id}" ${c.id === cardFilter ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>
+      <input type="month" value="${cardMonth}" data-act="cardmonth" aria-label="Bulan" style="width:auto">
+    </div>
+    <div class="grid2" style="margin-top:8px">${stat("Belanja " + fmtYM(cardMonth), RM(mSpend), "neg")}${stat("Dibayar", RM(mPaid), "pos")}</div>
+    ${rows.length ? `<ul class="list" style="margin-top:8px">${rows.map(r => `<li><div class="grow"><div>${esc(r.cat)}${r.note ? ` <span class="muted small">· ${esc(r.note)}</span>` : ""}</div><div class="small muted">${fmtD(r.date)} · ${esc(cname(r.cardId))}</div></div>
+      <span class="num ${r.type === "bayar" ? "pos" : r.type === "awal" ? "" : "neg"}">${r.type === "bayar" ? "−" : "+"}${RM(r.amount)}</span>${del("cardTx", r.id)}</li>`).join("")}</ul>` : `<p class="empty">Tiada rekod untuk ${fmtYM(cardMonth)}.</p>`}
+  </section>` : ""}`;
+}
+
 function vHutang() {
   const c = calc(S), t = today();
   const debts = [...S.debts].sort((a, b) => (Number(b.rate) || 0) - (Number(a.rate) || 0));
-  return `
+  return vKad() + `
   <section class="card">
     <div class="row between"><h2>Komitmen bulanan</h2>${dsrPill(c)}</div>
     ${S.commitments.length ? `<ul class="list">${S.commitments.map(x => `<li><div class="grow"><div>${esc(x.name)}</div><div class="small muted">Bayar setiap ${x.day || "—"} haribulan</div></div><span class="num">${RM(x.amount)}</span>${del("commitments", x.id)}</li>`).join("")}</ul>` : `<p class="empty">Tiada komitmen.</p>`}
@@ -690,6 +770,22 @@ document.addEventListener("submit", e => {
     case "goal": S.goals.push({ id: uid(), year: num(d.year), area: d.area, title: d.title.trim(), done: false }); break;
     case "venture": S.ventures.push({ id: uid(), name: d.name.trim(), kind: d.kind.trim() || "Projek", target: num(d.target), stage: 0, steps: VENTURE_STEPS.map(t => ({ t, done: false })) }); break;
     case "step": { const v = S.ventures.find(x => x.id === f.dataset.id); if (v) v.steps.push({ t: d.t.trim(), done: false }); break; }
+    case "card": {
+      const card = { id: uid(), name: d.name.trim(), limit: num(d.limit), dueDay: num(d.dueDay), rate: num(d.rate) };
+      S.cards.push(card);
+      if (num(d.opening) > 0) S.cardTx.push({ id: uid(), cardId: card.id, date: ymd(today()), type: "awal", amount: num(d.opening), cat: "Baki awal", note: "" });
+      break;
+    }
+    case "cardtx": S.cardTx.push({ id: uid(), cardId: d.cardId, date: d.date, type: "belanja", amount: num(d.amount), cat: d.cat.trim(), note: d.note.trim() }); cardMonth = d.date.slice(0, 7); toast("Belanja kad direkod"); break;
+    case "cardpay": {
+      const card = S.cards.find(x => x.id === f.dataset.id); const amt = num(d.amount);
+      if (card && amt > 0) {
+        S.cardTx.push({ id: uid(), cardId: card.id, date: ymd(today()), type: "bayar", amount: amt, cat: "Bayaran", note: "" });
+        S.tx.push({ id: uid(), date: ymd(today()), type: "out", cat: "Kad kredit", amount: amt, note: "Bayar " + card.name });
+        toast("Bayaran kad direkod");
+      }
+      break;
+    }
     case "settings": Object.assign(S.settings, { name: d.name.trim(), targetPassive: num(d.targetPassive), emergencyMonths: num(d.emergencyMonths) }); toast("Disimpan"); break;
   }
   commit();
@@ -701,11 +797,17 @@ document.addEventListener("click", e => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
   const { act, id } = b.dataset;
   switch (act) {
-    case "del": if (confirm("Padam item ini?")) { S[b.dataset.list] = S[b.dataset.list].filter(x => x.id !== id); commit(); } break;
+    case "del": if (confirm(b.dataset.list === "cards" ? "Padam kad ini dan semua rekod penggunaannya?" : "Padam item ini?")) {
+      S[b.dataset.list] = S[b.dataset.list].filter(x => x.id !== id);
+      if (b.dataset.list === "cards") S.cardTx = S.cardTx.filter(x => x.cardId !== id);
+      commit();
+    } break;
     case "pay": {
       S.paid[b.dataset.key] = true;
       const amt = num(b.dataset.amt);
-      S.tx.push({ id: uid(), date: ymd(today()), type: "out", cat: b.dataset.kind === "hutang" ? "Hutang" : "Komitmen", amount: amt, note: b.dataset.name, link: b.dataset.key });
+      const kind = b.dataset.kind;
+      S.tx.push({ id: uid(), date: ymd(today()), type: "out", cat: kind === "hutang" ? "Hutang" : kind === "kad" ? "Kad kredit" : "Komitmen", amount: amt, note: b.dataset.name, link: b.dataset.key });
+      if (kind === "kad") S.cardTx.push({ id: uid(), cardId: id, date: ymd(today()), type: "bayar", amount: amt, cat: "Bayaran", note: "" });
       if (b.dataset.kind === "hutang") { const d = S.debts.find(x => x.id === id); if (d) d.balance = Math.max(0, num(d.balance) - amt); }
       toast("Direkod sebagai transaksi"); commit(); break;
     }
@@ -743,6 +845,8 @@ document.addEventListener("change", e => {
   }
   const act = el.dataset.act; if (!act) return;
   if (act === "txmonth" && el.value) { txMonth = el.value; render(); }
+  if (act === "cardmonth" && el.value) { cardMonth = el.value; render(); }
+  if (act === "cardfilter") { cardFilter = el.value; render(); }
   if (act === "goaldone") { const g = S.goals.find(x => x.id === el.dataset.id); if (g) { g.done = el.checked; commit(); } }
   if (act === "step") { const v = S.ventures.find(x => x.id === el.dataset.id); if (v) { v.steps[num(el.dataset.i)].done = el.checked; commit(); } }
   if (act === "debtbal") { const d = S.debts.find(x => x.id === el.dataset.id); if (d) { d.balance = num(el.value); commit(); } }

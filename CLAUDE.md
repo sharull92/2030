@@ -11,7 +11,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 ## Ciri sedia ada (6 tab, nav bawah)
 1. **Ringkasan** — hero "cop passport" 2026–2030 + kiraan hari; pendapatan, komitmen + hutang, baki, DSR (<40% sihat, 40–60% berhati-hati, >60% tinggi); campuran pendapatan aktif/sampingan/pasif; kemajuan sasaran pasif; peringatan tarikh bayar 14 hari (butang "Dah bayar" auto-rekod transaksi); graf trend 6/12 bulan (SVG inline); ringkasan emas & ASB; langkah seterusnya.
 2. **Kewangan** — sumber pendapatan; rekod transaksi ikut bulan; sasaran emas (gram) & ASB (stage 1/2); dana kecemasan.
-3. **Hutang** — komitmen bulanan (tarikh bayar); hutang disusun ikut faedah tertinggi (avalanche) dengan anggaran tarikh selesai.
+3. **Hutang/Kad** — kad kredit (had, baki, % penggunaan <30% sihat, belanja bulan ikut kategori, bayaran minimum ≈5%/RM50, rekod belanja & bayaran; bayaran kad juga direkod dalam `tx`); komitmen bulanan (tarikh bayar); hutang disusun ikut faedah tertinggi (avalanche) dengan anggaran tarikh selesai.
 4. **Pelan 2030** — matlamat ikut tahun, templat cadangan (TTT → HRD Corp → modul pematuhan → app AI → pasif).
 5. **Niaga** — projek dengan peringkat Idea → Validasi → Bina → Lancar → Skala + senarai langkah proses; templat idea.
 6. **Tetapan** — nama, sasaran pasif, sandaran/pulih JSON, padam semua.
@@ -19,7 +19,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 ## Model data (satu objek `S`)
 ```js
 {
-  v: 2,
+  v: 3,
   updatedAt: Number,   // ms, untuk penyegerakan awan (v2)
   settings: { name, targetPassive, emergencyMonths },
   savings: Number,
@@ -29,6 +29,8 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
   tx:          [{ id, date: "YYYY-MM-DD", type: "in"|"out", cat, amount, note, link? }],
   goals:       [{ id, year, area, title, done }],
   ventures:    [{ id, name, kind, target, stage: 0-4, steps: [{ t, done }] }],
+  cards:       [{ id, name, limit, dueDay, rate }],                       // v3
+  cardTx:      [{ id, cardId, date, type: "belanja"|"bayar"|"awal", amount, cat, note }],  // v3
   paid:        { "<itemId>:<YYYY-MM>": true },   // peringatan yang sudah dibayar
   gold: { have, target: 30, price, by: "YYYY-MM" },
   asb:  { have, s1: 15000, s2: 30000, s1by, s2by }
@@ -43,6 +45,11 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - Sandaran: `Blob` + `<a download>`; pulih melalui fail JSON.
 - PWA: ikon PNG 192/512 (any + maskable) dalam `icons/` — wajib supaya Chrome Android pasang sebagai app sebenar (WebAPK) tanpa lencana Chrome. Butang "Pasang app" di Tetapan guna `beforeinstallprompt`.
 - Hosting: Vercel (statik, tiada build). `vercel.json` set `no-cache` untuk `sw.js` dan `config.js`. Service worker guna rangkaian dahulu untuk fail sama-asal, dan tidak mengganggu permintaan ke Supabase/CDN.
+
+## Aliran kerja deploy
+- Kod dibangunkan di `sharull92/2030` (branch `ccr-e881134b-pdcvan`).
+- Repo pengguna `hrsahrulsazly-bit/2030` ada GitHub Action `.github/workflows/segerak.yml` (salinan di `github-sync/segerak.yml`) yang menarik branch ini setiap 15 minit dan commit ke `main` — kecuali `config.js` dan `.github/`. Vercel deploy daripada `main`.
+- Jadi: cukup push ke branch ini; jangan ubah `config.js` dengan kunci sebenar di sini.
 
 ## Gaya reka bentuk
 - Fon: Bricolage Grotesque (tajuk), IBM Plex Sans (teks).

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -72,11 +72,53 @@ test("normalize kekalkan data lama dan isi lalai", () => {
   assert.equal(o.gold.have, 5);
   assert.equal(o.gold.target, 30);
   assert.deepEqual(o.tx, []);
-  assert.equal(o.v, 2);
+  assert.equal(o.v, 3);
+  assert.deepEqual(o.cards, []);
+  assert.deepEqual(o.cardTx, []);
   assert.equal(o.updatedAt, 0);
 });
 
 test("trend", () => {
   const t = L.trend([{ date: "2026-11-02", type: "in", amount: 100 }, { date: "2026-10-05", type: "out", amount: 40 }], new Date(2026, 10, 3), 2);
   assert.deepEqual(t, [{ m: "2026-10", in: 0, out: 40 }, { m: "2026-11", in: 100, out: 0 }]);
+});
+
+test("cardCalc: baki, penggunaan dan kategori bulan ini", () => {
+  const S = L.normalize({
+    cards: [{ id: "k", name: "Visa", limit: 5000, dueDay: 20 }],
+    cardTx: [
+      { cardId: "k", date: "2026-10-10", type: "belanja", amount: 1000, cat: "Bil" },
+      { cardId: "k", date: "2026-11-01", type: "awal", amount: 100, cat: "Baki awal" },
+      { cardId: "k", date: "2026-11-01", type: "belanja", amount: 300, cat: "Minyak" },
+      { cardId: "k", date: "2026-11-02", type: "belanja", amount: 200, cat: "Minyak" },
+      { cardId: "k", date: "2026-11-03", type: "bayar", amount: 1000 },
+      { cardId: "lain", date: "2026-11-03", type: "belanja", amount: 999 }
+    ]
+  });
+  const k = L.cardCalc(S, S.cards[0], new Date(2026, 10, 4));
+  assert.equal(k.balance, 600);
+  assert.equal(k.util, 12);
+  assert.equal(k.level, "sihat");
+  assert.equal(k.monthSpend, 500);
+  assert.deepEqual(k.byCat, { Minyak: 500 });
+  assert.equal(k.minPay, 50);
+  assert.equal(k.available, 4400);
+});
+
+test("upcoming: kad kredit dengan baki muncul, tanpa baki tidak", () => {
+  const S = L.normalize({
+    cards: [{ id: "k", name: "Visa", limit: 5000, dueDay: 10 }, { id: "z", name: "Kosong", limit: 1000, dueDay: 10 }],
+    cardTx: [{ cardId: "k", date: "2026-11-01", type: "belanja", amount: 250 }]
+  });
+  const u = L.upcoming(S, new Date(2026, 10, 4));
+  assert.equal(u.length, 1);
+  assert.equal(u[0].kind, "kad");
+  assert.equal(u[0].amount, 250);
+});
+
+test("normalize: data v2 dinaik taraf ke v3 tanpa hilang data", () => {
+  const o = L.normalize({ v: 2, updatedAt: 5, incomes: [{ id: "a", amount: 1 }] });
+  assert.equal(o.v, 3);
+  assert.equal(o.updatedAt, 5);
+  assert.equal(o.incomes.length, 1);
 });
