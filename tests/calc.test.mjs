@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -360,4 +360,28 @@ test("nextDue: tarikh akhir seterusnya", () => {
   assert.deepEqual(L.nextDue(3, new Date(2026, 10, 4)), { date: "2026-12-03", diff: 29 });
   assert.equal(L.nextDue(31, new Date(2027, 1, 10)).date, "2027-02-28");
   assert.equal(L.nextDue(null, new Date()), null);
+});
+
+test("monthReport: data laporan bulanan", () => {
+  const S = L.normalize({
+    incomes: [{ id: "g", amount: 4782 }],
+    commitments: [{ id: "c1", name: "Sewa", amount: 900, day: 5 }, { id: "c2", name: "Internet", amount: 120, day: 20 }],
+    paid: { "c1:2026-11": true },
+    cards: [{ id: "k", name: "Visa", limit: 5000, dueDay: 15 }],
+    tx: [
+      { date: "2026-11-27", type: "in", cat: "Gaji", amount: 4782 },
+      { date: "2026-11-02", type: "out", cat: "DOBI", amount: 63 },
+      { date: "2026-11-10", type: "out", cat: "Kad kredit", amount: 100 },
+      { date: "2026-10-31", type: "out", cat: "Makan", amount: 6 }
+    ],
+    cardTx: [{ cardId: "k", date: "2026-11-05", type: "belanja", amount: 150, cat: "Minyak" }, { cardId: "k", date: "2026-11-10", type: "bayar", amount: 100 }]
+  });
+  const r = L.monthReport(S, "2026-11", new Date(2026, 10, 30));
+  assert.equal(r.in, 4782); assert.equal(r.out, 213); assert.equal(r.net, 4569);
+  assert.deepEqual(r.byCat.map(c => c.cat), ["Minyak", "DOBI"]);
+  assert.deepEqual(r.rows.map(x => x.cat), ["DOBI", "Minyak", "Kad kredit", "Gaji"]);   // ikut tarikh
+  assert.equal(r.rows.find(x => x.cat === "Minyak").via, "Kad Visa");
+  assert.equal(r.rows.find(x => x.cat === "Kad kredit").bill, true);
+  assert.deepEqual(r.commitments.map(c => c.paid), [true, false]);
+  assert.deepEqual(r.cards[0], { name: "Visa", spend: 150, paid: 100, balance: 50, limit: 5000, util: 1 });
 });
