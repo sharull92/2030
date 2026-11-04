@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -245,4 +245,29 @@ test("monthOut: semua duit keluar bulan ini tanpa kira dua kali", () => {
   assert.equal(m.total, 1952);
   assert.equal(m.received, 4782);
   assert.deepEqual(m.byCat, { "U-MOBILE": 72, Komitmen: 900, Minyak: 60 });
+});
+
+test("yearSummary: tapis tahun; pendapatan ikut bulan direkod", () => {
+  const S = L.normalize({
+    incomes: [{ id: "g", amount: 4782 }],
+    commitments: [{ id: "c", amount: 900, day: 28 }],
+    tx: [
+      { date: "2026-10-03", type: "out", cat: "Minyak", amount: 150 },
+      { date: "2026-11-01", type: "out", cat: "U-MOBILE", amount: 72 },
+      { date: "2026-10-25", type: "in", cat: "Gaji", amount: 5000 },
+      { date: "2026-11-06", type: "out", cat: "Kad kredit", amount: 500 },
+      { date: "2027-01-05", type: "out", cat: "Makan", amount: 30 }
+    ],
+    cardTx: [{ cardId: "k", date: "2026-09-10", type: "belanja", amount: 60, cat: "Minyak" }]
+  });
+  const y = L.yearSummary(S, 2026, new Date(2026, 10, 10));
+  assert.equal(y.months, 3);                    // Sep, Okt, Nov
+  assert.equal(y.income, 4782 + 5000 + 4782);  // Okt guna jumlah sebenar diterima
+  assert.equal(y.spent, 150 + 72 + 60);         // bayaran bil kad tidak dikira
+  assert.equal(y.pending, 900);
+  assert.deepEqual(y.byCat, { Minyak: 210, "U-MOBILE": 72 });
+  const y27 = L.yearSummary(S, 2027, new Date(2026, 10, 10));
+  assert.equal(y27.spent, 30);
+  assert.equal(y27.income, 4782);
+  assert.equal(y27.pending, 0);
 });
