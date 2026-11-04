@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -73,7 +73,7 @@ test("normalize kekalkan data lama dan isi lalai", () => {
   assert.equal(o.gold.have, 5);
   assert.equal(o.gold.target, 30);
   assert.deepEqual(o.tx, []);
-  assert.equal(o.v, 5);
+  assert.equal(o.v, 6);
   assert.deepEqual(o.cards, []);
   assert.deepEqual(o.cardTx, []);
   assert.equal(o.updatedAt, 0);
@@ -119,7 +119,7 @@ test("upcoming: kad kredit dengan baki muncul, tanpa baki tidak", () => {
 
 test("normalize: data v2 dinaik taraf ke v3 tanpa hilang data", () => {
   const o = L.normalize({ v: 2, updatedAt: 5, incomes: [{ id: "a", amount: 1 }] });
-  assert.equal(o.v, 5);
+  assert.equal(o.v, 6);
   assert.equal(o.updatedAt, 5);
   assert.equal(o.incomes.length, 1);
 });
@@ -163,7 +163,7 @@ test("dana kecemasan: stage 1 ASB → stage 2 Tabung Haji", () => {
 
 test("migrasi v3 → v4: data ASB lama dikekalkan, tarikh stage 2 dibawa ke Tabung Haji", () => {
   const o = L.normalize({ v: 3, asb: { have: 7000, s1: 15000, s2: 30000, s1by: "2027-06", s2by: "2029-12" }, savings: 2000 });
-  assert.equal(o.v, 5);
+  assert.equal(o.v, 6);
   assert.equal(o.asb.have, 7000);
   assert.equal(o.asb.s1by, "2027-06");
   assert.equal(o.asb.s2, 30000);
@@ -319,7 +319,7 @@ test("tong sampah: padam → pulih (kad bersama rekodnya, langkah projek)", () =
 
 test("tong sampah: dibuang selepas 30 hari; data v4 dapat trash kosong", () => {
   const S = L.normalize({ v: 4, tx: [{ id: "a" }, { id: "b" }] });
-  assert.equal(S.v, 5); assert.deepEqual(S.trash, {});
+  assert.equal(S.v, 6); assert.deepEqual(S.trash, {});
   L.trashItem(S, "tx", "a", 0);
   L.trashItem(S, "tx", "b", 31 * 864e5);   // purge berlaku semasa padam kedua
   assert.deepEqual(Object.keys(S.trash), ["b"]);
@@ -384,4 +384,35 @@ test("monthReport: data laporan bulanan", () => {
   assert.equal(r.rows.find(x => x.cat === "Kad kredit").bill, true);
   assert.deepEqual(r.commitments.map(c => c.paid), [true, false]);
   assert.deepEqual(r.cards[0], { name: "Visa", spend: 150, paid: 100, balance: 50, limit: 5000, util: 1 });
+});
+
+test("rekod simpanan: jumlah = baki awal + rekod (emas gram 3 perpuluhan)", () => {
+  const S = L.normalize({ v: 5, gold: { have: 2 }, asb: { have: 8500, s1: 15000 }, th: { have: 1000, target: 15000 },
+    deposits: [
+      { id: "e1", kind: "emas", dir: "in", date: "2026-11-01", grams: 1.025, amount: 405.39 },
+      { id: "e2", kind: "emas", dir: "in", date: "2026-11-15", grams: 0.5, amount: 200 },
+      { id: "e3", kind: "emas", dir: "out", date: "2026-11-20", grams: 0.25 },
+      { id: "a1", kind: "asb", dir: "in", date: "2026-11-02", amount: 100 },
+      { id: "a2", kind: "asb", dir: "in", date: "2026-11-25", amount: 150.5 },
+      { id: "t1", kind: "th", dir: "in", date: "2026-11-03", amount: 50 },
+      { id: "t2", kind: "th", dir: "out", date: "2026-11-04", amount: 20 }
+    ] });
+  assert.equal(S.v, 6);
+  assert.equal(L.goldHave(S), 3.275);            // 2 + 1.025 + 0.5 − 0.25
+  assert.equal(L.asbHave(S), 8750.5);
+  assert.equal(L.thHave(S), 1030);
+  const e = L.emergencyCalc(S, new Date(2026, 10, 30));
+  assert.equal(e.s1.need, 15000 - 8750.5);
+  assert.equal(L.calc(S).emergencyHave, 9780.5);
+  const r = L.monthReport(S, "2026-11", new Date(2026, 10, 30));
+  assert.equal(r.gold.have, 3.275);
+  assert.equal(r.deposits.length, 7);
+  assert.equal(r.deposits[0].id, "e1");          // ikut tarikh
+});
+
+test("rekod simpanan: data v5 lama dapat deposits kosong, baki lama kekal", () => {
+  const o = L.normalize({ v: 5, gold: { have: 3.5 }, asb: { have: 8500 } });
+  assert.deepEqual(o.deposits, []);
+  assert.equal(L.goldHave(o), 3.5);
+  assert.equal(L.asbHave(o), 8500);
 });

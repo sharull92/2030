@@ -10,7 +10,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 
 ## Ciri sedia ada (6 tab, nav bawah)
 1. **Ringkasan** — hero "cop passport" 2026–2030 + kiraan hari; **Ringkasan ikut tahun** (pilih tahun atau "Semua tahun" = `yearSummary(S, 0, …)`; `yearSummary`: pendapatan = transaksi "Masuk" sebenar SAHAJA (jangan campur pendapatan dirancang — pengguna nampak berganda); jika bulan semasa belum ada Masuk, pendapatan dirancang ditunjuk sebagai "dijangka" + "Dijangka hujung bulan"; duit keluar = tx keluar kecuali "Kad kredit" + belanja kad; komitmen bulan semasa belum "Dah bayar" → baki dijangka; pecahan ikut kategori), DSR (<40% sihat, 40–60% berhati-hati, >60% tinggi); campuran pendapatan aktif/sampingan/pasif; kemajuan sasaran pasif; peringatan tarikh bayar 14 hari (butang "Dah bayar" auto-rekod transaksi); graf trend: 6 atau 12 bulan terakhir atau Jan–Dis tahun dipilih (`trendMonths` + `monthFlow`: keluar termasuk belanja kad, kecuali bayaran bil kad), dengan jumlah tempoh (SVG inline); ringkasan emas & dana kecemasan; langkah seterusnya.
-2. **Kewangan** — **Laporan bulanan → Eksport PDF** (`monthReport` data tulen + `reportHTML` ke `#printArea`, `@media print` A4, `window.print()` → "Simpan sebagai PDF"; `document.title` = nama fail); sumber pendapatan; rekod transaksi ikut bulan atau "Semua bulan" (`monthSelect` + tajuk bulan `withMonthHeads`; sama untuk rekod kad); sasaran emas (gram); dana kecemasan berperingkat: Stage 1 ASB RM15,000 → Stage 2 Tabung Haji RM15,000 (`emergencyCalc`), % dihadkan per stage, tunjuk berapa bulan komitmen+hutang boleh ditampung (termasuk `savings` = simpanan tunai lain).
+2. **Kewangan** — **Laporan bulanan → Eksport PDF** (`monthReport` data tulen + `reportHTML` ke `#printArea`, `@media print` A4, `window.print()` → "Simpan sebagai PDF"; `document.title` = nama fail); sumber pendapatan; rekod transaksi ikut bulan atau "Semua bulan" (`monthSelect` + tajuk bulan `withMonthHeads`; sama untuk rekod kad); **rekod simpanan sikit-sikit** untuk emas (beli/jual, gram 3 perpuluhan, harga dibayar) dan ASB/Tabung Haji (simpan/keluarkan) — jumlah = baki awal + rekod (`depTotal`, `goldHave`, `asbHave`, `thHave`; JANGAN baca `.have` terus); pilihan "Tolak dari baki duit" cipta tx Keluar berpaut `link: "dep:<id>"` (padam rekod → tx ikut ke tong sampah, Undo pulih kedua-dua); sasaran emas (gram); dana kecemasan berperingkat: Stage 1 ASB RM15,000 → Stage 2 Tabung Haji RM15,000 (`emergencyCalc`), % dihadkan per stage, tunjuk berapa bulan komitmen+hutang boleh ditampung (termasuk `savings` = simpanan tunai lain).
 3. **Hutang/Kad** — kad kredit (borang Transaksi ada "Bayar guna" Tunai/debit atau kad → belanja kad masuk `cardTx` dan dipapar dalam senarai Transaksi dengan 💳; status setiap belanja kad "Sudah bayar / Separa / Belum bayar" ikut `cardAlloc` (bayaran tutup belanja paling lama dahulu); `cardDueLine` + `nextDue` tunjuk baki belum bayar & tarikh akhir di Hutang/Kad dan kad "Kad kredit" di Ringkasan; bayaran bil kad (tx kategori "Kad kredit") dipapar tetapi tidak dikira dalam Keluar; had, baki, % penggunaan <30% sihat, belanja bulan ikut kategori, bayaran minimum ≈5%/RM50, rekod belanja & bayaran; bayaran kad juga direkod dalam `tx`); komitmen bulanan (tarikh bayar); hutang disusun ikut faedah tertinggi (avalanche) dengan anggaran tarikh selesai.
 4. **Pelan 2030** — matlamat ikut tahun, templat cadangan (TTT → HRD Corp → modul pematuhan → app AI → pasif).
 5. **Niaga** — projek dengan peringkat Idea → Validasi → Bina → Lancar → Skala + senarai langkah proses; templat idea.
@@ -19,7 +19,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 ## Model data (satu objek `S`)
 ```js
 {
-  v: 5,
+  v: 6,
   updatedAt: Number,   // ms, untuk penyegerakan awan (v2)
   settings: { name, targetPassive, emergencyMonths, notify, notifyDays },
   savings: Number,
@@ -31,9 +31,10 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
   ventures:    [{ id, name, kind, target, stage: 0-4, steps: [{ t, done }] }],
   cards:       [{ id, name, limit, dueDay, rate }],                       // v3
   cardTx:      [{ id, cardId, date, type: "belanja"|"bayar"|"awal", amount, cat, note }],  // v3
+  deposits:    [{ id, kind: "emas"|"asb"|"th", dir: "in"|"out", date, amount, grams?, note }],  // v6: rekod simpanan
   trash:       { "<id>": { list, item, at, cardTx?, ventureId?, index? } },  // v5: tong sampah 30 hari
   paid:        { "<itemId>:<YYYY-MM>": true },   // peringatan yang sudah dibayar
-  gold: { have, target: 30, price, by: "YYYY-MM" },
+  gold: { have, target: 30, price, by: "YYYY-MM" },   // have/asb.have/th.have = BAKI AWAL sebelum rekod; jumlah sebenar = goldHave(S)/asbHave(S)/thHave(S)
   asb:  { have, s1: 15000, s1by },            // dana kecemasan stage 1 (ASB); asb.s2/s2by lama dikekalkan tetapi tidak digunakan
   th:   { have, target: 15000, by }           // v4: dana kecemasan stage 2 (Tabung Haji)
 }

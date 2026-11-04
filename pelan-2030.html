@@ -142,12 +142,13 @@ svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans
 <script>
 // @logic-start — fungsi tulen (diuji dalam tests/calc.test.mjs)
 const DEFAULTS = () => ({
-  v: 5,
+  v: 6,
   updatedAt: 0,
   settings: { name: "", targetPassive: 3000, emergencyMonths: 6, notify: false, notifyDays: 3 },
   savings: 0,
   incomes: [], commitments: [], debts: [], tx: [], goals: [], ventures: [],
   cards: [], cardTx: [],
+  deposits: [], // v6: rekod simpanan { id, kind: "emas"|"asb"|"th", dir: "in"|"out", date, amount (RM), grams?, note }
   trash: {},   // v5: item dipadam { id: { list, item, at, cardTx?, ventureId?, index? } } — disimpan 30 hari
   paid: {},
   gold: { have: 0, target: 30, price: 0, by: "2028-12" },
@@ -163,7 +164,7 @@ function normalize(d) {
   o.gold = Object.assign({}, b.gold, d.gold || {});
   o.asb = Object.assign({}, b.asb, d.asb || {});
   o.th = Object.assign({}, b.th, d.th || {});
-  for (const k of ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx"]) {
+  for (const k of ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits"]) {
     if (!Array.isArray(o[k])) o[k] = [];
   }
   if (!o.paid || typeof o.paid !== "object") o.paid = {};
@@ -178,6 +179,8 @@ function normalize(d) {
   // v4 → v5: tong sampah
   if (!o.trash || typeof o.trash !== "object" || Array.isArray(o.trash)) o.trash = {};
   if (o.v < 5) o.v = 5;
+  // v5 → v6: rekod simpanan. Baki sedia ada (gold/asb/th .have) kekal sebagai "baki awal".
+  if (o.v < 6) o.v = 6;
   o.updatedAt = Number(o.updatedAt) || 0;
   return o;
 }
@@ -198,7 +201,7 @@ function calc(S) {
   const passivePct = target > 0 ? Math.min(100, (mix.pasif / target) * 100) : 0;
   const totalDebt = sum(S.debts, x => x.balance);
   const asbT = Number(S.asb.s1) || 0, thT = Number(S.th.target) || 0;
-  const asbH = Number(S.asb.have) || 0, thH = Number(S.th.have) || 0;
+  const asbH = asbHave(S), thH = thHave(S);
   const emergencyTarget = asbT + thT;
   const emergencyHave = asbH + thH;
   // Setiap stage dihadkan pada sasarannya supaya lebihan ASB tidak menutup kekurangan Tabung Haji.
@@ -296,10 +299,19 @@ function trend(tx, today, n) {
   }
   return out;
 }
+// Simpanan = baki awal + semua rekod simpanan (dir "out" = jual / keluarkan).
+function depTotal(S, kind) {
+  return sum(S.deposits.filter(d => d.kind === kind), d => (d.dir === "out" ? -1 : 1) * (Number(kind === "emas" ? d.grams : d.amount) || 0));
+}
+const goldHave = S => Math.round(((Number(S.gold.have) || 0) + depTotal(S, "emas")) * 1000) / 1000;
+const asbHave = S => Math.round(((Number(S.asb.have) || 0) + depTotal(S, "asb")) * 100) / 100;
+const thHave = S => Math.round(((Number(S.th.have) || 0) + depTotal(S, "th")) * 100) / 100;
+const goldCost = S => sum(S.deposits.filter(d => d.kind === "emas" && d.dir !== "out"), d => d.amount);
+
 // Dana kecemasan berperingkat: Stage 1 ASB → Stage 2 Tabung Haji.
 function emergencyCalc(S, today) {
-  const s1 = savCalc(S.asb.have, S.asb.s1, S.asb.s1by, today);
-  const s2 = savCalc(S.th.have, S.th.target, S.th.by, today);
+  const s1 = savCalc(asbHave(S), S.asb.s1, S.asb.s1by, today);
+  const s2 = savCalc(thHave(S), S.th.target, S.th.by, today);
   const stage = s1.need > 0 ? 1 : s2.need > 0 ? 2 : 3; // 3 = kedua-dua selesai
   return { s1, s2, stage };
 }
@@ -415,13 +427,14 @@ function monthReport(S, m, today) {
   const c = calc(S), e = emergencyCalc(S, today);
   return { m, in: flow.in, out: flow.out, net: flow.in - flow.out, byCat, rows, commitments, debts, cards,
     committed: c.out, dsr: c.dsr, dsrLevel: c.dsrLevel,
-    emergency: { asb: Number(S.asb.have) || 0, asbTarget: Number(S.asb.s1) || 0, th: Number(S.th.have) || 0, thTarget: Number(S.th.target) || 0, stage: e.stage },
-    gold: { have: Number(S.gold.have) || 0, target: Number(S.gold.target) || 0 } };
+    emergency: { asb: asbHave(S), asbTarget: Number(S.asb.s1) || 0, th: thHave(S), thTarget: Number(S.th.target) || 0, stage: e.stage },
+    gold: { have: goldHave(S), target: Number(S.gold.target) || 0 },
+    deposits: S.deposits.filter(inM).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))) };
 }
 
 // ---------- tong sampah & pulih ----------
-const LISTS = ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx"];
-const LIST_LABEL = { incomes: "Pendapatan", commitments: "Komitmen", debts: "Hutang", tx: "Transaksi", goals: "Matlamat", ventures: "Projek niaga", cards: "Kad kredit", cardTx: "Rekod kad", steps: "Langkah projek" };
+const LISTS = ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits"];
+const LIST_LABEL = { incomes: "Pendapatan", commitments: "Komitmen", debts: "Hutang", tx: "Transaksi", goals: "Matlamat", ventures: "Projek niaga", cards: "Kad kredit", cardTx: "Rekod kad", deposits: "Rekod simpanan", steps: "Langkah projek" };
 function purgeTrash(S, now, days = 30) {
   for (const [k, e] of Object.entries(S.trash)) if (!e || now - (Number(e.at) || 0) > days * 864e5) delete S.trash[k];
 }
@@ -482,6 +495,7 @@ function describeItem(list, it) {
     case "ventures": return it.name;
     case "cards": return `${it.name} · had ${rm(it.limit)}`;
     case "steps": return it.t;
+    case "deposits": return `${{ emas: "Emas", asb: "ASB", th: "Tabung Haji" }[it.kind] || it.kind} ${it.dir === "out" ? "keluar" : "simpan"} ${it.kind === "emas" ? (Number(it.grams) || 0) + " g" + (it.amount ? " (" + rm(it.amount) + ")" : "") : rm(it.amount)} · ${it.date}`;
     default: return String(it.name || it.title || it.id);
   }
 }
@@ -873,7 +887,7 @@ function vRingkasan() {
   const stamps = [2026, 2027, 2028, 2029, 2030].map(y => `<span class="stamp ${y === yr ? "now" : y < yr ? "past" : ""}">${y}</span>`).join("");
   const up = upcoming(S, t);
   const mixT = c.income || 1;
-  const gs = savCalc(S.gold.have, S.gold.target, S.gold.by, t);
+  const gs = savCalc(goldHave(S), S.gold.target, S.gold.by, t);
   const em = emergencyCalc(S, t);
   return `
   <section class="card hero">
@@ -931,12 +945,12 @@ function vRingkasan() {
 
   <section class="card">
     <h2>Emas & dana kecemasan</h2>
-    <div class="row between small"><span>Emas ${fmtG(S.gold.have)} / ${fmtG(S.gold.target)}</span><span>${gs.pct.toFixed(0)}%</span></div>
+    <div class="row between small"><span>Emas ${fmtG(goldHave(S))} / ${fmtG(S.gold.target)}</span><span>${gs.pct.toFixed(0)}%</span></div>
     ${bar(gs.pct, "gold")}
     <p class="small muted">${gs.need ? `${fmtG(gs.perMonth)} sebulan hingga ${fmtYM(S.gold.by)}` : "Sasaran tercapai 🎉"}</p>
     <div class="row between small" style="margin-top:6px"><span>Dana kecemasan ${RM(c.emergencyHave)} / ${RM(c.emergencyTarget)}</span><span>${c.emergencyPct.toFixed(0)}%</span></div>
     ${bar(c.emergencyPct)}
-    <p class="small muted">${em.stage === 3 ? "Kedua-dua stage tercapai 🎉" : em.stage === 1 ? `Stage 1 (ASB): ${RM(S.asb.have)} / ${RM(S.asb.s1)}` : `Stage 1 (ASB) ✓ · Stage 2 (Tabung Haji): ${RM(S.th.have)} / ${RM(S.th.target)}`}</p>
+    <p class="small muted">${em.stage === 3 ? "Kedua-dua stage tercapai 🎉" : em.stage === 1 ? `Stage 1 (ASB): ${RM(asbHave(S))} / ${RM(S.asb.s1)}` : `Stage 1 (ASB) ✓ · Stage 2 (Tabung Haji): ${RM(thHave(S))} / ${RM(S.th.target)}`}</p>
   </section>
 
   <section class="card">
@@ -982,7 +996,8 @@ function reportHTML(r) {
   ${r.commitments.length || r.debts.length ? `<h2>Komitmen & hutang (${R(r.committed)} sebulan)</h2>${tbl(["Perkara", "Hari bayar", "Status", "Jumlah (RM)"],
       r.commitments.map(c => `<tr><td>${esc(c.name)}</td><td>${c.day || "—"}</td><td>${ok(c.paid)}</td><td class="r">${R(c.amount)}</td></tr>`).join("")
     + r.debts.map(d => `<tr><td>${esc(d.name)} <small class="muted">· baki ${R(d.balance)} · ${d.rate}%</small></td><td>${d.day || "—"}</td><td>${d.balance > 0 ? ok(d.paid) : `<span class="ok">Selesai</span>`}</td><td class="r">${R(d.payment)}</td></tr>`).join(""))}` : ""}
-  <h2>Simpanan</h2>
+  ${r.deposits.length ? `<h2>Rekod simpanan bulan ini</h2>${tbl(["Tarikh", "Akaun", "Jenis", "Nota", "Jumlah"], r.deposits.map(d => `<tr><td>${fmtD(d.date)}</td><td>${KIND_LABEL[d.kind]}</td><td>${d.dir === "out" ? (d.kind === "emas" ? "Jual" : "Keluarkan") : (d.kind === "emas" ? "Beli" : "Simpan")}</td><td>${esc(d.note || "")}</td><td class="r">${d.kind === "emas" ? fmtG(d.grams) + (d.amount ? " · " + R(d.amount) : "") : R(d.amount)}</td></tr>`).join(""))}` : ""}
+  <h2>Simpanan (jumlah semasa)</h2>
   ${tbl(["Perkara", "Ada", "Sasaran", "%"], [
     ["Dana kecemasan · Stage 1 (ASB)", R(r.emergency.asb), R(r.emergency.asbTarget), r.emergency.asbTarget ? Math.min(100, r.emergency.asb / r.emergency.asbTarget * 100) : 0],
     ["Dana kecemasan · Stage 2 (Tabung Haji)", R(r.emergency.th), R(r.emergency.thTarget), r.emergency.thTarget ? Math.min(100, r.emergency.th / r.emergency.thTarget * 100) : 0],
@@ -1003,6 +1018,35 @@ function exportPDF() {
   setTimeout(() => { window.print(); setTimeout(done, 1500); }, 50);
 }
 
+const KIND_LABEL = { emas: "Emas", asb: "ASB", th: "Tabung Haji" };
+function depForm(which) {
+  const gold = which === "emas";
+  return `<form class="add" data-form="deposit" data-kind="${gold ? "emas" : ""}" style="margin-top:10px">
+    ${gold ? "" : `<label>Akaun<select name="kind"><option value="asb">ASB</option><option value="th">Tabung Haji</option></select></label>`}
+    <label>Jenis<select name="dir"><option value="in">${gold ? "Beli" : "Simpan"}</option><option value="out">${gold ? "Jual" : "Keluarkan"}</option></select></label>
+    <label>Tarikh<input name="date" type="date" value="${ymd(today())}" required></label>
+    ${gold ? `<label>Gram<input name="grams" type="number" inputmode="decimal" step="0.001" min="0.001" required placeholder="cth. 1.025"></label>
+      <label>Harga dibayar (RM)<input name="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="pilihan"></label>`
+      : `<label>Jumlah (RM)<input name="amount" type="number" inputmode="decimal" step="0.01" min="0.01" required></label>`}
+    <label>Nota<input name="note" placeholder="${gold ? "cth. Public Gold" : "cth. potongan gaji"}"></label>
+    <label style="grid-column:1/-1;display:flex;gap:8px;align-items:center;color:var(--ink)"><input type="checkbox" name="totx" checked style="width:20px">Tolak dari baki duit (rekod juga sebagai transaksi Keluar)</label>
+    <button class="primary">${gold ? "Rekod emas" : "Rekod simpanan"}</button>
+  </form>`;
+}
+let depShowAll = {};
+function depList(kinds) {
+  const key = kinds.join(",");
+  const rows = S.deposits.filter(d => kinds.includes(d.kind)).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  if (!rows.length) return `<p class="empty">Belum ada rekod. Baki dikira daripada baki awal + rekod di sini.</p>`;
+  const shown = depShowAll[key] ? rows : rows.slice(0, 5);
+  return `<ul class="list" style="margin-top:6px">${shown.map(d => {
+    const out = d.dir === "out";
+    const main = d.kind === "emas" ? `${out ? "−" : "+"}${fmtG(d.grams)}` : `${out ? "−" : "+"}${RM(d.amount)}`;
+    return `<li><div class="grow"><div>${KIND_LABEL[d.kind]} · ${out ? (d.kind === "emas" ? "jual" : "keluarkan") : (d.kind === "emas" ? "beli" : "simpan")}${d.note ? ` <span class="muted small">· ${esc(d.note)}</span>` : ""}</div><div class="small muted">${fmtD(d.date)}${d.kind === "emas" && d.amount ? " · " + RM(d.amount) : ""}${S.tx.some(t => t.link === "dep:" + d.id) ? " · ditolak dari baki" : ""}</div></div>
+      <span class="num ${out ? "neg" : "pos"}">${main}</span>${del("deposits", d.id)}</li>`;
+  }).join("")}</ul>${rows.length > 5 ? `<button class="ghost sm" data-act="depall" data-key="${key}">${depShowAll[key] ? "Tunjuk 5 terkini" : `Lihat semua (${rows.length})`}</button>` : ""}`;
+}
+
 function vKewangan() {
   const c = calc(S), t = today();
   const inSel = x => !txMonth || String(x.date).slice(0, 7) === txMonth;
@@ -1012,7 +1056,7 @@ function vKewangan() {
   const isBill = r => !r._card && r.type === "out" && r.cat === "Kad kredit";
   const tin = sum(rows.filter(r => !r._card && r.type === "in"), r => r.amount);
   const tout = sum(rows.filter(r => r._card || (r.type === "out" && !isBill(r))), r => r.amount);
-  const gs = savCalc(S.gold.have, S.gold.target, S.gold.by, t);
+  const gs = savCalc(goldHave(S), S.gold.target, S.gold.by, t);
   const { s1, s2, stage } = emergencyCalc(S, t);
   const stLine = (sv, label) => sv.need ? `Perlu ${RM(sv.need)} lagi · ${isFinite(sv.perMonth) ? RM(sv.perMonth) + " sebulan" : "tarikh sasaran sudah lepas"}` : label + " tercapai ✓";
   const pill = n => stage === n ? `<span class="pill warn">Sedang dibina</span>` : stage > n ? `<span class="pill ok">Selesai</span>` : `<span class="pill">Seterusnya</span>`;
@@ -1057,16 +1101,20 @@ function vKewangan() {
 
   <section class="card">
     <h2>Sasaran emas</h2>
-    <div class="row between small"><span>${fmtG(S.gold.have)} / ${fmtG(S.gold.target)} · nilai ${RM(S.gold.have * S.gold.price)}</span><span>${gs.pct.toFixed(0)}%</span></div>
+    <div class="row between small"><span>${fmtG(goldHave(S))} / ${fmtG(S.gold.target)}${S.gold.price ? ` · nilai ${RM(goldHave(S) * S.gold.price)}` : ""}</span><span>${gs.pct.toFixed(0)}%</span></div>
     ${bar(gs.pct, "gold")}
     <p class="small muted">${gs.need ? `Perlu ${fmtG(gs.need)} lagi · ${isFinite(gs.perMonth) ? fmtG(gs.perMonth) + " sebulan" : "tarikh sasaran sudah lepas"}${S.gold.price ? ` (≈ ${RM(gs.perMonth * S.gold.price)})` : ""}` : "Sasaran tercapai 🎉"}</p>
+    ${goldCost(S) ? `<p class="small muted" style="margin-top:-6px">Kos belian direkod ${RM(goldCost(S))}${depTotal(S, "emas") > 0 ? ` · purata ${RM(goldCost(S) / sum(S.deposits.filter(d => d.kind === "emas" && d.dir !== "out"), d => d.grams))}/g` : ""}</p>` : ""}
+    ${depForm("emas")}
+    ${depList(["emas"])}
+    <details style="margin-top:10px"><summary>Tetapan emas (baki awal, sasaran, harga semasa)</summary>
     <form class="add" data-form="gold">
-      <label>Ada (gram)<input name="have" type="number" inputmode="decimal" step="0.001" min="0" value="${S.gold.have}"></label>
+      <label>Baki awal sebelum rekod (gram)<input name="have" type="number" inputmode="decimal" step="0.001" min="0" value="${S.gold.have}"></label>
       <label>Sasaran (gram)<input name="target" type="number" inputmode="decimal" step="0.001" min="0" value="${S.gold.target}"></label>
-      <label>Harga RM/gram<input name="price" type="number" inputmode="decimal" step="0.01" min="0" value="${S.gold.price}"></label>
+      <label>Harga semasa RM/gram<input name="price" type="number" inputmode="decimal" step="0.01" min="0" value="${S.gold.price}"></label>
       <label>Menjelang<input name="by" type="month" value="${S.gold.by}"></label>
       <button>Simpan</button>
-    </form>
+    </form></details>
   </section>
 
   <section class="card">
@@ -1077,23 +1125,26 @@ function vKewangan() {
 
     <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
       <div class="row between"><h3 style="margin:0">Stage 1 (ASB) · ${RM(S.asb.s1)}</h3>${pill(1)}</div>
-      <div class="row between small" style="margin-top:6px"><span>${RM(S.asb.have)} / ${RM(S.asb.s1)} menjelang ${fmtYM(S.asb.s1by)}</span><span>${s1.pct.toFixed(0)}%</span></div>
+      <div class="row between small" style="margin-top:6px"><span>${RM(asbHave(S))} / ${RM(S.asb.s1)} menjelang ${fmtYM(S.asb.s1by)}</span><span>${s1.pct.toFixed(0)}%</span></div>
       ${bar(s1.pct, "amber")}
       <p class="small muted">${stLine(s1, "Stage 1")}</p>
     </div>
     <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
       <div class="row between"><h3 style="margin:0">Stage 2 (Tabung Haji) · ${RM(S.th.target)}</h3>${pill(2)}</div>
-      <div class="row between small" style="margin-top:6px"><span>${RM(S.th.have)} / ${RM(S.th.target)} menjelang ${fmtYM(S.th.by)}</span><span>${s2.pct.toFixed(0)}%</span></div>
+      <div class="row between small" style="margin-top:6px"><span>${RM(thHave(S))} / ${RM(S.th.target)} menjelang ${fmtYM(S.th.by)}</span><span>${s2.pct.toFixed(0)}%</span></div>
       ${bar(s2.pct, "gold")}
       <p class="small muted">${stLine(s2, "Stage 2")}</p>
     </div>
 
-    <details style="margin-top:12px"><summary>Kemas kini baki & sasaran</summary>
+    <h3 style="margin-top:16px">Rekod simpanan ASB / Tabung Haji</h3>
+    ${depForm("dana")}
+    ${depList(["asb", "th"])}
+    <details style="margin-top:12px"><summary>Tetapan (baki awal & sasaran)</summary>
     <form class="add" data-form="emergency">
-      <label>Baki ASB (RM)<input name="asbHave" type="number" inputmode="decimal" step="0.01" min="0" value="${S.asb.have}"></label>
+      <label>Baki awal ASB sebelum rekod (RM)<input name="asbHave" type="number" inputmode="decimal" step="0.01" min="0" value="${S.asb.have}"></label>
       <label>Sasaran stage 1 (RM)<input name="s1" type="number" inputmode="decimal" step="0.01" min="0" value="${S.asb.s1}"></label>
       <label>Stage 1 menjelang<input name="s1by" type="month" value="${S.asb.s1by}"></label>
-      <label>Baki Tabung Haji (RM)<input name="thHave" type="number" inputmode="decimal" step="0.01" min="0" value="${S.th.have}"></label>
+      <label>Baki awal Tabung Haji sebelum rekod (RM)<input name="thHave" type="number" inputmode="decimal" step="0.01" min="0" value="${S.th.have}"></label>
       <label>Sasaran stage 2 (RM)<input name="thTarget" type="number" inputmode="decimal" step="0.01" min="0" value="${S.th.target}"></label>
       <label>Stage 2 menjelang<input name="thBy" type="month" value="${S.th.by}"></label>
       <label>Simpanan tunai lain (RM)<input name="savings" type="number" inputmode="decimal" step="0.01" min="0" value="${S.savings}"></label>
@@ -1464,6 +1515,17 @@ document.addEventListener("submit", e => {
       } else S.tx.push({ id: uid(), date: d.date, type: d.type, cat: d.cat.trim(), amount: num(d.amount), note: d.note.trim() });
       if (txMonth) txMonth = d.date.slice(0, 7);
       break;
+    case "deposit": {
+      const kind = f.dataset.kind || d.kind;
+      const out = d.dir === "out";
+      const dep = { id: uid(), kind, dir: out ? "out" : "in", date: d.date, amount: num(d.amount), note: (d.note || "").trim() };
+      if (kind === "emas") dep.grams = num(d.grams);
+      S.deposits.push(dep);
+      if (d.totx && !out && dep.amount > 0)
+        S.tx.push({ id: uid(), date: dep.date, type: "out", cat: KIND_LABEL[kind], amount: dep.amount, note: dep.note || (kind === "emas" ? fmtG(dep.grams) : "Simpanan"), link: "dep:" + dep.id });
+      toast(`${KIND_LABEL[kind]}: ${kind === "emas" ? (out ? "−" : "+") + fmtG(dep.grams) : (out ? "−" : "+") + RM(dep.amount)} direkod`);
+      break;
+    }
     case "gold": Object.assign(S.gold, { have: num(d.have), target: num(d.target), price: num(d.price), by: d.by || S.gold.by }); toast("Disimpan"); break;
     case "emergency":
       Object.assign(S.asb, { have: num(d.asbHave), s1: num(d.s1), s1by: d.s1by || S.asb.s1by });
@@ -1502,10 +1564,15 @@ document.addEventListener("click", e => {
   const { act, id } = b.dataset;
   switch (act) {
     case "del": if (confirm(b.dataset.list === "cards" ? "Padam kad ini dan semua rekod penggunaannya?" : "Padam item ini?")) {
-      const list = b.dataset.list;
-      if (trashItem(S, list, id, Date.now())) {
+      const list = b.dataset.list, now = Date.now();
+      const linked = list === "deposits" ? S.tx.filter(t => t.link === "dep:" + id).map(t => t.id) : [];
+      if (trashItem(S, list, id, now)) {
+        linked.forEach(tid => trashItem(S, "tx", tid, now));
         commit();
-        toastUndo(`${LIST_LABEL[list] || "Item"} dipadam`, () => { if (restoreItem(S, id)) { commit(); toast("Dipulihkan"); } });
+        toastUndo(`${LIST_LABEL[list] || "Item"} dipadam${linked.length ? " (bersama transaksinya)" : ""}`, () => {
+          const okR = restoreItem(S, id); linked.forEach(tid => restoreItem(S, "" + tid));
+          if (okR) { commit(); toast("Dipulihkan"); }
+        });
       }
     } break;
     case "pay": {
@@ -1533,6 +1600,7 @@ document.addEventListener("click", e => {
       break;
     }
     case "pdf": exportPDF(); break;
+    case "depall": depShowAll[b.dataset.key] = !depShowAll[b.dataset.key]; render(); break;
     case "restore1": if (restoreItem(S, id)) { commit(); toast("Dipulihkan"); } break;
     case "emptytrash": if (confirm("Kosongkan tong sampah? Item di dalamnya tidak boleh dipulihkan lagi.")) { S.trash = {}; commit(); } break;
     case "scanlost": scanLost(); break;
