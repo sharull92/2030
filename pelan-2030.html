@@ -423,7 +423,7 @@ function downloadICS() {
 const CFG = window.PELAN_CONFIG || {};
 let cloudConfigured = !!(CFG.supabaseUrl && CFG.supabaseKey);
 let sb = null, sbUser = null, syncMsg = "", pushT = null;
-let plan = null, members = [], channel = null, syncing = false, syncAgain = false, shareOpen = false;
+let plan = null, members = [], channel = null, syncing = false, syncAgain = false, shareOpen = false, loginErr = "";
 document.addEventListener("toggle", e => { if (e.target.id === "shareBox") shareOpen = e.target.open; }, true);
 const BASEKEY = KEY + ":base";
 function setSync(msg) {
@@ -568,7 +568,7 @@ async function initCloud() {
     const changed = (u && u.id) !== (sbUser && sbUser.id);
     sbUser = u;
     if (changed) {
-      plan = null; members = [];
+      plan = null; members = []; loginErr = "";
       if (channel) { sb.removeChannel(channel); channel = null; }
       render(); if (u) setTimeout(syncNow, 0);
     }
@@ -989,6 +989,7 @@ function vCloud() {
       <button class="primary" name="mode" value="masuk">Log masuk</button>
       <button name="mode" value="daftar">Daftar akaun baru</button>
     </form>
+    <p id="loginErr" class="small neg" role="alert" style="margin:.6rem 0 0" ${loginErr ? "" : "hidden"}>${loginErr}</p>
     <p class="small muted">Kali pertama? Tekan <b>Daftar akaun baru</b> di telefon pertama. Di telefon kedua, tekan <b>Log masuk</b> dengan e-mel dan kata laluan yang sama.</p>`;
   else {
     const owner = plan && plan.owner_id === sbUser.id;
@@ -1004,6 +1005,9 @@ function vCloud() {
     <p class="small muted" id="syncMsg">${esc(syncMsg)}</p>
     <div class="row"><button data-act="sync">Segerak sekarang</button><button data-act="logout">Log keluar</button></div>
     <p class="small muted" style="margin-top:10px">Di telefon lain, log masuk dengan e-mel dan kata laluan yang sama untuk lihat data yang sama.</p>
+    <details style="margin-top:8px"><summary>Tetapkan / tukar kata laluan</summary>
+      <form class="add" data-form="setpw" style="grid-template-columns:1fr auto"><input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Kata laluan baru (min. 6)" aria-label="Kata laluan baru"><button class="primary">Simpan</button></form>
+    </details>
     <details id="shareBox" style="margin-top:8px" ${shareOpen || members.length || (plan && plan.owner_id !== sbUser.id) ? "open" : ""}><summary>Kongsi dengan e-mel lain (pilihan)</summary>${share}</details>`;
   }
   return `<section class="card"><h2>Penyegerakan awan</h2>${body}</section>`;
@@ -1048,6 +1052,13 @@ document.addEventListener("submit", e => {
   const f = e.target.closest("form[data-form]"); if (!f) return;
   e.preventDefault();
   const d = Object.fromEntries(new FormData(f));
+  if (f.dataset.form === "setpw") {
+    sb.auth.updateUser({ password: d.password }).then(({ error }) => {
+      if (error) toast(/same|different/i.test(error.message) ? "Kata laluan ini sudah digunakan" : "Gagal: " + error.message);
+      else { f.reset(); toast("Kata laluan disimpan. Guna e-mel + kata laluan ini di telefon lain."); }
+    });
+    return;
+  }
   if (f.dataset.form === "invite") { invite(d.email); f.reset(); return; }
   if (f.dataset.form === "login") {
     const mode = (e.submitter && e.submitter.value) || "masuk";
@@ -1055,18 +1066,24 @@ document.addEventListener("submit", e => {
     const cred = { email: d.email.trim().toLowerCase(), password: d.password };
     (mode === "daftar" ? sb.auth.signUp(cred) : sb.auth.signInWithPassword(cred))
       .then(({ data, error }) => {
+        let msg = "";
         if (error) {
           const m = error.message || "";
-          if (/invalid login credentials/i.test(m)) toast("E-mel atau kata laluan salah. Belum ada akaun? Tekan Daftar akaun baru.");
-          else if (/already registered|already exists/i.test(m)) toast("Akaun ini sudah wujud — tekan Log masuk.");
-          else if (/email not confirmed/i.test(m)) toast("E-mel belum disahkan. Semak e-mel, atau matikan 'Confirm email' di Supabase.");
-          else if (/password/i.test(m)) toast("Kata laluan terlalu lemah — guna sekurang-kurangnya 6 aksara.");
-          else toast("Gagal: " + m);
+          if (/invalid login credentials/i.test(m)) msg = "E-mel atau kata laluan salah. Jika telefon pertama dahulu log masuk guna <b>pautan e-mel</b>, akaun itu belum ada kata laluan — di telefon pertama buka Tetapan → <b>Tetapkan kata laluan</b>, kemudian cuba lagi di sini.";
+          else if (/already registered|already exists/i.test(m)) msg = "Akaun ini sudah wujud — tekan <b>Log masuk</b> (bukan Daftar).";
+          else if (/email not confirmed/i.test(m)) msg = "E-mel belum disahkan. Di Supabase → Authentication → Sign In / Providers → Email, matikan <b>Confirm email</b>, kemudian cuba lagi.";
+          else if (/weak|password should|at least/i.test(m)) msg = "Kata laluan terlalu lemah — guna sekurang-kurangnya 6 aksara.";
+          else if (/fetch|network/i.test(m)) msg = "Tiada sambungan internet ke Supabase. Semak internet dan cuba lagi.";
+          else msg = "Gagal log masuk: " + esc(m);
         } else if (mode === "daftar" && !data.session) {
-          toast("Akaun dicipta. Semak e-mel untuk sahkan, atau matikan 'Confirm email' di Supabase, kemudian Log masuk.");
-        } else toast("Berjaya log masuk");
+          msg = "Akaun dicipta tetapi perlu pengesahan e-mel. Matikan <b>Confirm email</b> di Supabase (Authentication → Sign In / Providers → Email), kemudian tekan Log masuk.";
+        }
+        loginErr = msg;
+        const el = document.getElementById("loginErr");
+        if (el) { el.innerHTML = msg; el.hidden = !msg; }
+        if (!msg) toast("Berjaya log masuk");
       })
-      .finally(() => btns.forEach(x => x.disabled = false));
+      .finally(() => f.isConnected && btns.forEach(x => x.disabled = false));
     return;
   }
   switch (f.dataset.form) {
