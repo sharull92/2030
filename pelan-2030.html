@@ -427,8 +427,7 @@ let plan = null, members = [], channel = null, syncing = false, syncAgain = fals
 const BASEKEY = KEY + ":base";
 function setSync(msg) {
   syncMsg = msg;
-  const el = document.getElementById("syncMsg");
-  if (el) el.textContent = msg;
+  for (const id of ["syncMsg", "syncMsg2"]) { const el = document.getElementById(id); if (el) el.textContent = msg; }
 }
 const jam = () => new Date().toLocaleTimeString("ms-MY", { hour: "2-digit", minute: "2-digit" });
 function getBase(pid) { try { const b = JSON.parse(localStorage.getItem(BASEKEY)); return b && b.planId === pid ? b.data : null; } catch { return null; } }
@@ -454,10 +453,11 @@ async function attachPlan(p) {
       if (error) throw error;
       const remote = normalize(row.data);
       const joining = p.owner_id !== sbUser.id;
-      if (joining || planIsEmpty(S) || (remote.updatedAt || 0) >= (S.updatedAt || 0)) {
+      // Peranti baru pada pelan sedia ada: data awan menjadi rujukan (kecuali awan masih kosong).
+      if (joining || planIsEmpty(S) || !planIsEmpty(remote)) {
         if (!planIsEmpty(S) && !sameData(S, remote)) {
           try { localStorage.setItem(KEY + ":sandaran-sebelum-kongsi", JSON.stringify(S)); } catch {}
-          if (joining) toast("Data lama telefon ini disimpan sebagai sandaran");
+          toast("Data awan dimuatkan. Data lama telefon ini disimpan sebagai sandaran.");
         }
         adopt(remote);
       }
@@ -645,6 +645,8 @@ function vRingkasan() {
     <p class="muted small" style="margin:0">Selamat datang${S.settings.name ? ", " + esc(S.settings.name) : ""}</p>
     <div class="row between" style="align-items:flex-end">
       <div><div class="big num">${days.toLocaleString("ms-MY")}</div><div class="muted">hari lagi hingga 31 Dis 2030</div></div>
+    </div>
+    <div class="small muted" style="margin-top:8px">${sbUser ? `☁ ${esc(sbUser.email)} · <span id="syncMsg2">${esc(syncMsg || "")}</span>` : `<button class="sm" data-tab="tetapan" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.4)">Log masuk untuk segerak antara telefon</button>`}
     </div>
     <div class="stamps" aria-label="Tahun pelan">${stamps}</div>
   </section>
@@ -979,8 +981,14 @@ function vCloud() {
   let body;
   if (!cloudConfigured) body = `<p class="small muted">Belum disambung. Sambungkan Supabase ke Vercel (Vercel → Integrations → Supabase), atau isi URL dan kunci dalam fail <code>config.js</code>.</p>`;
   else if (!sb) body = `<p class="small muted">Pustaka Supabase tidak dapat dimuatkan (mungkin luar talian). Data tetap disimpan dalam peranti ini.</p>`;
-  else if (!sbUser) body = `<p class="small muted">Log masuk untuk simpan data di awan dan guna pada telefon serta komputer.</p>
-    <form class="add" data-form="login"><label>E-mel<input name="email" type="email" required autocomplete="email"></label><button class="primary">Hantar pautan log masuk</button></form>`;
+  else if (!sbUser) body = `<p class="small muted">Log masuk dengan <b>e-mel dan kata laluan yang sama</b> di setiap telefon — data akan sama di semua telefon dan dikemas kini serta-merta.</p>
+    <form class="add" data-form="login">
+      <label>E-mel<input name="email" type="email" required autocomplete="email"></label>
+      <label>Kata laluan (min. 6 aksara)<input name="password" type="password" required minlength="6" autocomplete="current-password"></label>
+      <button class="primary" name="mode" value="masuk">Log masuk</button>
+      <button name="mode" value="daftar">Daftar akaun baru</button>
+    </form>
+    <p class="small muted">Kali pertama? Tekan <b>Daftar akaun baru</b> di telefon pertama. Di telefon kedua, tekan <b>Log masuk</b> dengan e-mel dan kata laluan yang sama.</p>`;
   else {
     const owner = plan && plan.owner_id === sbUser.id;
     let share;
@@ -994,13 +1002,15 @@ function vCloud() {
     body = `<p style="margin:.2rem 0">Log masuk sebagai <b>${esc(sbUser.email)}</b></p>
     <p class="small muted" id="syncMsg">${esc(syncMsg)}</p>
     <div class="row"><button data-act="sync">Segerak sekarang</button><button data-act="logout">Log keluar</button></div>
-    <h3 style="margin-top:16px">Kongsi pelan</h3>${share}`;
+    <p class="small muted" style="margin-top:10px">Di telefon lain, log masuk dengan e-mel dan kata laluan yang sama untuk lihat data yang sama.</p>
+    <details style="margin-top:8px"><summary>Kongsi dengan e-mel lain (pilihan)</summary>${share}</details>`;
   }
   return `<section class="card"><h2>Penyegerakan awan</h2>${body}</section>`;
 }
 
 function vTetapan() {
   return `
+  ${vCloud()}
   <section class="card">
     <h2>Profil</h2>
     <form class="add" data-form="settings">
@@ -1011,7 +1021,6 @@ function vTetapan() {
   </section>
   ${vNotify()}
   ${vInstall()}
-  ${vCloud()}
   <section class="card">
     <h2>Sandaran</h2>
     <p class="small muted">Data disimpan dalam pelayar ini sahaja. Muat turun sandaran secara berkala.</p>
@@ -1040,10 +1049,23 @@ document.addEventListener("submit", e => {
   const d = Object.fromEntries(new FormData(f));
   if (f.dataset.form === "invite") { invite(d.email); f.reset(); return; }
   if (f.dataset.form === "login") {
-    const btn = f.querySelector("button"); btn.disabled = true;
-    sb.auth.signInWithOtp({ email: d.email.trim(), options: { emailRedirectTo: location.origin + location.pathname } })
-      .then(({ error }) => toast(error ? "Gagal: " + error.message : "Semak e-mel anda untuk pautan log masuk"))
-      .finally(() => { btn.disabled = false; });
+    const mode = (e.submitter && e.submitter.value) || "masuk";
+    const btns = f.querySelectorAll("button"); btns.forEach(x => x.disabled = true);
+    const cred = { email: d.email.trim().toLowerCase(), password: d.password };
+    (mode === "daftar" ? sb.auth.signUp(cred) : sb.auth.signInWithPassword(cred))
+      .then(({ data, error }) => {
+        if (error) {
+          const m = error.message || "";
+          if (/invalid login credentials/i.test(m)) toast("E-mel atau kata laluan salah. Belum ada akaun? Tekan Daftar akaun baru.");
+          else if (/already registered|already exists/i.test(m)) toast("Akaun ini sudah wujud — tekan Log masuk.");
+          else if (/email not confirmed/i.test(m)) toast("E-mel belum disahkan. Semak e-mel, atau matikan 'Confirm email' di Supabase.");
+          else if (/password/i.test(m)) toast("Kata laluan terlalu lemah — guna sekurang-kurangnya 6 aksara.");
+          else toast("Gagal: " + m);
+        } else if (mode === "daftar" && !data.session) {
+          toast("Akaun dicipta. Semak e-mel untuk sahkan, atau matikan 'Confirm email' di Supabase, kemudian Log masuk.");
+        } else toast("Berjaya log masuk");
+      })
+      .finally(() => btns.forEach(x => x.disabled = false));
     return;
   }
   switch (f.dataset.form) {

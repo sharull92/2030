@@ -10,8 +10,8 @@ App perancangan kewangan dan kerjaya peribadi hingga 31 Disember 2030. Satu fail
 1. **Supabase → SQL Editor:** tampal isi `supabase/schema.sql` dan tekan Run.
 2. **Sambung kunci:** Vercel → projek → **Integrations** → Supabase → sambung ke projek Supabase anda, kemudian **Redeploy**. App membaca URL + kunci awam melalui `/api/supabase-config`. (Cara lain: salin kunci *publishable*/*anon* ke `config.js`. Jangan guna kunci *secret*/*service_role*.)
 3. **Vercel → Add New → Project:** import repo `2030`, Framework Preset **Other**, tiada build command, tekan Deploy.
-4. **Supabase → Authentication → URL Configuration:** letak URL Vercel (cth. `https://2030-xxx.vercel.app`) sebagai *Site URL*, dan tambah `https://2030-xxx.vercel.app/**` dalam *Redirect URLs*.
-5. Buka app → **Tetapan → Penyegerakan awan** → masukkan e-mel → klik pautan dalam e-mel.
+4. **Supabase → Authentication → Sign In / Providers → Email:** matikan **Confirm email** (supaya boleh terus log masuk tanpa e-mel pengesahan). *(Pilihan)* **URL Configuration:** letak URL Vercel (cth. `https://2030-xxx.vercel.app`) sebagai *Site URL*, dan tambah `https://2030-xxx.vercel.app/**` dalam *Redirect URLs*.
+5. Buka app → **Tetapan → Penyegerakan awan** → e-mel + kata laluan → **Daftar akaun baru** (telefon pertama) / **Log masuk** (telefon lain, e-mel & kata laluan sama).
 6. **Kongsi dengan e-mel lain:** di bahagian *Kongsi pelan*, masukkan e-mel kedua → **Jemput**. Orang itu log masuk dengan e-mel tersebut di telefonnya dan terus nampak data yang sama; perubahan muncul di kedua-dua telefon secara automatik.
 
 ## Tab
