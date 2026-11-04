@@ -109,7 +109,7 @@ svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans
 <script>
 // @logic-start — fungsi tulen (diuji dalam tests/calc.test.mjs)
 const DEFAULTS = () => ({
-  v: 3,
+  v: 4,
   updatedAt: 0,
   settings: { name: "", targetPassive: 3000, emergencyMonths: 6, notify: false, notifyDays: 3 },
   savings: 0,
@@ -117,7 +117,8 @@ const DEFAULTS = () => ({
   cards: [], cardTx: [],
   paid: {},
   gold: { have: 0, target: 30, price: 0, by: "2028-12" },
-  asb: { have: 0, s1: 15000, s2: 30000, s1by: "2027-12", s2by: "2030-12" }
+  asb: { have: 0, s1: 15000, s1by: "2027-12" },       // dana kecemasan stage 1
+  th:  { have: 0, target: 15000, by: "2030-12" }       // dana kecemasan stage 2 (Tabung Haji)
 });
 
 function normalize(d) {
@@ -127,6 +128,7 @@ function normalize(d) {
   o.settings = Object.assign({}, b.settings, d.settings || {});
   o.gold = Object.assign({}, b.gold, d.gold || {});
   o.asb = Object.assign({}, b.asb, d.asb || {});
+  o.th = Object.assign({}, b.th, d.th || {});
   for (const k of ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx"]) {
     if (!Array.isArray(o[k])) o[k] = [];
   }
@@ -137,6 +139,8 @@ function normalize(d) {
   if (o.v < 2) { o.updatedAt = Number(o.updatedAt) || 0; o.v = 2; }
   // v2 → v3: kad kredit (cards, cardTx) — tatasusunan kosong sudah diisi di atas.
   if (o.v < 3) o.v = 3;
+  // v3 → v4: dana kecemasan = Stage 1 ASB + Stage 2 Tabung Haji. Medan lama asb.s2/s2by dikekalkan (tidak dipadam).
+  if (o.v < 4) { if (!d.th && d.asb && d.asb.s2by) o.th.by = d.asb.s2by; o.v = 4; }
   o.updatedAt = Number(o.updatedAt) || 0;
   return o;
 }
@@ -156,9 +160,14 @@ function calc(S) {
   const target = Number(S.settings.targetPassive) || 0;
   const passivePct = target > 0 ? Math.min(100, (mix.pasif / target) * 100) : 0;
   const totalDebt = sum(S.debts, x => x.balance);
-  const emergencyTarget = out * (Number(S.settings.emergencyMonths) || 0);
-  const emergencyPct = emergencyTarget > 0 ? Math.min(100, (S.savings / emergencyTarget) * 100) : 0;
-  return { income, commit, debtPay, out, balance, dsr, dsrLevel, mix, passivePct, totalDebt, emergencyTarget, emergencyPct };
+  const asbT = Number(S.asb.s1) || 0, thT = Number(S.th.target) || 0;
+  const asbH = Number(S.asb.have) || 0, thH = Number(S.th.have) || 0;
+  const emergencyTarget = asbT + thT;
+  const emergencyHave = asbH + thH;
+  // Setiap stage dihadkan pada sasarannya supaya lebihan ASB tidak menutup kekurangan Tabung Haji.
+  const emergencyPct = emergencyTarget > 0 ? Math.min(100, ((Math.min(asbH, asbT) + Math.min(thH, thT)) / emergencyTarget) * 100) : 0;
+  const emergencyMonths = out > 0 ? (emergencyHave + (Number(S.savings) || 0)) / out : Infinity;
+  return { income, commit, debtPay, out, balance, dsr, dsrLevel, mix, passivePct, totalDebt, emergencyTarget, emergencyHave, emergencyPct, emergencyMonths };
 }
 
 // Bilangan bulan untuk selesaikan hutang (faedah tahunan % dikompaun bulanan).
@@ -250,6 +259,14 @@ function trend(tx, today, n) {
   }
   return out;
 }
+// Dana kecemasan berperingkat: Stage 1 ASB → Stage 2 Tabung Haji.
+function emergencyCalc(S, today) {
+  const s1 = savCalc(S.asb.have, S.asb.s1, S.asb.s1by, today);
+  const s2 = savCalc(S.th.have, S.th.target, S.th.by, today);
+  const stage = s1.need > 0 ? 1 : s2.need > 0 ? 2 : 3; // 3 = kedua-dua selesai
+  return { s1, s2, stage };
+}
+
 // Item bayaran berulang (komitmen, hutang aktif, kad dengan baki) untuk kalendar.
 function billItems(S, today) {
   return [
@@ -450,7 +467,9 @@ function nextSteps(c) {
   if (!S.incomes.length) s.push("Tambah sumber pendapatan di tab Kewangan.");
   if (!S.commitments.length && !S.debts.length) s.push("Senaraikan komitmen dan hutang anda.");
   if (c.dsr >= 40 && isFinite(c.dsr)) s.push("DSR melebihi 40% — fokus bayar hutang faedah tertinggi dahulu.");
-  if (c.emergencyPct < 100 && c.out > 0) s.push(`Bina dana kecemasan: ${RM(c.emergencyTarget - S.savings)} lagi.`);
+  { const e = emergencyCalc(S, today());
+    if (e.stage === 1) s.push(`Dana kecemasan stage 1: tambah ${RM(e.s1.need)} lagi dalam ASB${isFinite(e.s1.perMonth) ? ` (${RM(e.s1.perMonth)} sebulan)` : ""}.`);
+    else if (e.stage === 2) s.push(`Dana kecemasan stage 2: tambah ${RM(e.s2.need)} lagi dalam Tabung Haji${isFinite(e.s2.perMonth) ? ` (${RM(e.s2.perMonth)} sebulan)` : ""}.`); }
   for (const cd of S.cards) { const k = cardCalc(S, cd, today()); if (k.util >= 30) s.push(`Kad ${cd.name} guna ${k.util.toFixed(0)}% had — cuba kurangkan bawah 30%.`); }
   if (!S.goals.length) s.push("Isi matlamat tahunan di tab Pelan 2030 (guna templat).");
   const g = S.goals.filter(x => !x.done).sort((a, b) => a.year - b.year)[0];
@@ -470,7 +489,7 @@ function vRingkasan() {
   const up = upcoming(S, t);
   const mixT = c.income || 1;
   const gs = savCalc(S.gold.have, S.gold.target, S.gold.by, t);
-  const as = savCalc(S.asb.have, S.asb.have >= S.asb.s1 ? S.asb.s2 : S.asb.s1, S.asb.have >= S.asb.s1 ? S.asb.s2by : S.asb.s1by, t);
+  const em = emergencyCalc(S, t);
   return `
   <section class="card hero">
     <p class="muted small" style="margin:0">Selamat datang${S.settings.name ? ", " + esc(S.settings.name) : ""}</p>
@@ -510,13 +529,13 @@ function vRingkasan() {
   </section>
 
   <section class="card">
-    <h2>Emas & ASB</h2>
+    <h2>Emas & dana kecemasan</h2>
     <div class="row between small"><span>Emas ${S.gold.have} / ${S.gold.target} g</span><span>${gs.pct.toFixed(0)}%</span></div>
     ${bar(gs.pct, "gold")}
     <p class="small muted">${gs.need ? `${(gs.perMonth).toFixed(2)} g sebulan hingga ${fmtYM(S.gold.by)}` : "Sasaran tercapai 🎉"}</p>
-    <div class="row between small"><span>ASB ${RM(S.asb.have)} / ${RM(S.asb.have >= S.asb.s1 ? S.asb.s2 : S.asb.s1)} (stage ${S.asb.have >= S.asb.s1 ? 2 : 1})</span><span>${as.pct.toFixed(0)}%</span></div>
-    ${bar(as.pct, "amber")}
-    <p class="small muted">${as.need ? `${RM(as.perMonth)} sebulan` : "Sasaran tercapai 🎉"}</p>
+    <div class="row between small" style="margin-top:6px"><span>Dana kecemasan ${RM(c.emergencyHave)} / ${RM(c.emergencyTarget)}</span><span>${c.emergencyPct.toFixed(0)}%</span></div>
+    ${bar(c.emergencyPct)}
+    <p class="small muted">${em.stage === 3 ? "Kedua-dua stage tercapai 🎉" : em.stage === 1 ? `Stage 1 · ASB: ${RM(S.asb.have)} / ${RM(S.asb.s1)}` : `Stage 1 ✓ · Stage 2 · Tabung Haji: ${RM(S.th.have)} / ${RM(S.th.target)}`}</p>
   </section>
 
   <section class="card">
@@ -530,7 +549,9 @@ function vKewangan() {
   const rows = S.tx.filter(x => String(x.date).slice(0, 7) === txMonth).sort((a, b) => b.date.localeCompare(a.date));
   const tin = sum(rows.filter(r => r.type === "in"), r => r.amount), tout = sum(rows.filter(r => r.type === "out"), r => r.amount);
   const gs = savCalc(S.gold.have, S.gold.target, S.gold.by, t);
-  const s1 = savCalc(S.asb.have, S.asb.s1, S.asb.s1by, t), s2 = savCalc(S.asb.have, S.asb.s2, S.asb.s2by, t);
+  const { s1, s2, stage } = emergencyCalc(S, t);
+  const stLine = (sv, label) => sv.need ? `Perlu ${RM(sv.need)} lagi · ${isFinite(sv.perMonth) ? RM(sv.perMonth) + " sebulan" : "tarikh sasaran sudah lepas"}` : label + " tercapai ✓";
+  const pill = n => stage === n ? `<span class="pill warn">Sedang dibina</span>` : stage > n ? `<span class="pill ok">Selesai</span>` : `<span class="pill">Seterusnya</span>`;
   return `
   <section class="card">
     <h2>Sumber pendapatan</h2>
@@ -556,7 +577,7 @@ function vKewangan() {
       <label>Nota<input name="note"></label>
       <button class="primary">Rekod</button>
     </form>
-    <datalist id="cats">${["Gaji","Sampingan","Pasif","Makan","Pengangkutan","Sewa","Utiliti","Komitmen","Hutang","Simpanan","Emas","ASB","Kursus","Lain-lain"].map(x => `<option value="${x}">`).join("")}</datalist>
+    <datalist id="cats">${["Gaji","Sampingan","Pasif","Makan","Pengangkutan","Sewa","Utiliti","Komitmen","Hutang","Simpanan","Emas","ASB","Tabung Haji","Kursus","Lain-lain"].map(x => `<option value="${x}">`).join("")}</datalist>
   </section>
 
   <section class="card">
@@ -574,31 +595,35 @@ function vKewangan() {
   </section>
 
   <section class="card">
-    <h2>ASB</h2>
-    <div class="row between small"><span>Stage 1: ${RM(S.asb.s1)} menjelang ${fmtYM(S.asb.s1by)}</span><span>${s1.pct.toFixed(0)}%</span></div>
-    ${bar(s1.pct, "amber")}
-    <p class="small muted">${s1.need ? `${RM(s1.perMonth)} sebulan` : "Stage 1 tercapai ✓"}</p>
-    <div class="row between small"><span>Stage 2: ${RM(S.asb.s2)} menjelang ${fmtYM(S.asb.s2by)}</span><span>${s2.pct.toFixed(0)}%</span></div>
-    ${bar(s2.pct, "amber")}
-    <p class="small muted">${s2.need ? `${RM(s2.perMonth)} sebulan` : "Stage 2 tercapai ✓"}</p>
-    <form class="add" data-form="asb">
-      <label>Baki ASB (RM)<input name="have" type="number" step="0.01" min="0" value="${S.asb.have}"></label>
-      <label>Stage 1 (RM)<input name="s1" type="number" min="0" value="${S.asb.s1}"></label>
-      <label>Stage 1 menjelang<input name="s1by" type="month" value="${S.asb.s1by}"></label>
-      <label>Stage 2 (RM)<input name="s2" type="number" min="0" value="${S.asb.s2}"></label>
-      <label>Stage 2 menjelang<input name="s2by" type="month" value="${S.asb.s2by}"></label>
-      <button>Simpan</button>
-    </form>
-  </section>
-
-  <section class="card">
     <h2>Dana kecemasan</h2>
-    <div class="row between small"><span>${RM(S.savings)} / ${RM(c.emergencyTarget)} (${S.settings.emergencyMonths} bulan perbelanjaan wajib)</span><span>${c.emergencyPct.toFixed(0)}%</span></div>
+    <div class="row between small"><span>${RM(c.emergencyHave)} / ${RM(c.emergencyTarget)}</span><span>${c.emergencyPct.toFixed(0)}%</span></div>
     ${bar(c.emergencyPct)}
-    <form class="add" data-form="savings">
-      <label>Simpanan semasa (RM)<input name="savings" type="number" step="0.01" min="0" value="${S.savings}"></label>
-      <button>Simpan</button>
-    </form>
+    <p class="small muted">${c.out > 0 ? `Bersamaan ≈ ${c.emergencyMonths.toFixed(1)} bulan komitmen + hutang (${RM(c.out)} sebulan)${S.savings ? `, termasuk simpanan lain ${RM(S.savings)}` : ""}.` : "Tambah komitmen dan hutang untuk lihat berapa bulan dana ini boleh bertahan."}</p>
+
+    <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+      <div class="row between"><h3 style="margin:0">Stage 1 · ASB</h3>${pill(1)}</div>
+      <div class="row between small" style="margin-top:6px"><span>${RM(S.asb.have)} / ${RM(S.asb.s1)} menjelang ${fmtYM(S.asb.s1by)}</span><span>${s1.pct.toFixed(0)}%</span></div>
+      ${bar(s1.pct, "amber")}
+      <p class="small muted">${stLine(s1, "Stage 1")}</p>
+    </div>
+    <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+      <div class="row between"><h3 style="margin:0">Stage 2 · Tabung Haji</h3>${pill(2)}</div>
+      <div class="row between small" style="margin-top:6px"><span>${RM(S.th.have)} / ${RM(S.th.target)} menjelang ${fmtYM(S.th.by)}</span><span>${s2.pct.toFixed(0)}%</span></div>
+      ${bar(s2.pct, "gold")}
+      <p class="small muted">${stLine(s2, "Stage 2")}</p>
+    </div>
+
+    <details style="margin-top:12px"><summary>Kemas kini baki & sasaran</summary>
+    <form class="add" data-form="emergency">
+      <label>Baki ASB (RM)<input name="asbHave" type="number" step="0.01" min="0" value="${S.asb.have}"></label>
+      <label>Sasaran stage 1 (RM)<input name="s1" type="number" min="0" value="${S.asb.s1}"></label>
+      <label>Stage 1 menjelang<input name="s1by" type="month" value="${S.asb.s1by}"></label>
+      <label>Baki Tabung Haji (RM)<input name="thHave" type="number" step="0.01" min="0" value="${S.th.have}"></label>
+      <label>Sasaran stage 2 (RM)<input name="thTarget" type="number" min="0" value="${S.th.target}"></label>
+      <label>Stage 2 menjelang<input name="thBy" type="month" value="${S.th.by}"></label>
+      <label>Simpanan tunai lain (RM)<input name="savings" type="number" step="0.01" min="0" value="${S.savings}"></label>
+      <button class="primary">Simpan</button>
+    </form></details>
   </section>`;
 }
 
@@ -819,7 +844,6 @@ function vTetapan() {
     <form class="add" data-form="settings">
       <label>Nama<input name="name" value="${esc(S.settings.name)}"></label>
       <label>Sasaran pasif (RM/bln)<input name="targetPassive" type="number" min="0" value="${S.settings.targetPassive}"></label>
-      <label>Dana kecemasan (bulan)<input name="emergencyMonths" type="number" min="0" max="24" value="${S.settings.emergencyMonths}"></label>
       <button class="primary">Simpan</button>
     </form>
   </section>
@@ -863,8 +887,10 @@ document.addEventListener("submit", e => {
     case "income": S.incomes.push({ id: uid(), name: d.name.trim(), type: d.type, amount: num(d.amount) }); break;
     case "tx": S.tx.push({ id: uid(), date: d.date, type: d.type, cat: d.cat.trim(), amount: num(d.amount), note: d.note.trim() }); txMonth = d.date.slice(0, 7); break;
     case "gold": Object.assign(S.gold, { have: num(d.have), target: num(d.target), price: num(d.price), by: d.by || S.gold.by }); toast("Disimpan"); break;
-    case "asb": Object.assign(S.asb, { have: num(d.have), s1: num(d.s1), s2: num(d.s2), s1by: d.s1by || S.asb.s1by, s2by: d.s2by || S.asb.s2by }); toast("Disimpan"); break;
-    case "savings": S.savings = num(d.savings); toast("Disimpan"); break;
+    case "emergency":
+      Object.assign(S.asb, { have: num(d.asbHave), s1: num(d.s1), s1by: d.s1by || S.asb.s1by });
+      Object.assign(S.th, { have: num(d.thHave), target: num(d.thTarget), by: d.thBy || S.th.by });
+      S.savings = num(d.savings); toast("Disimpan"); break;
     case "commitment": S.commitments.push({ id: uid(), name: d.name.trim(), amount: num(d.amount), day: num(d.day) }); break;
     case "debt": S.debts.push({ id: uid(), name: d.name.trim(), balance: num(d.balance), rate: num(d.rate), payment: num(d.payment), day: num(d.day) }); break;
     case "goal": S.goals.push({ id: uid(), year: num(d.year), area: d.area, title: d.title.trim(), done: false }); break;
@@ -886,7 +912,7 @@ document.addEventListener("submit", e => {
       }
       break;
     }
-    case "settings": Object.assign(S.settings, { name: d.name.trim(), targetPassive: num(d.targetPassive), emergencyMonths: num(d.emergencyMonths) }); toast("Disimpan"); break;
+    case "settings": Object.assign(S.settings, { name: d.name.trim(), targetPassive: num(d.targetPassive), }); toast("Disimpan"); break;
   }
   commit();
 });

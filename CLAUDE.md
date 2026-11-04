@@ -9,8 +9,8 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - `pelan-2030.html` — app lengkap dalam satu fail (HTML + CSS + JS vanila, tiada build step). Buka terus dalam pelayar.
 
 ## Ciri sedia ada (6 tab, nav bawah)
-1. **Ringkasan** — hero "cop passport" 2026–2030 + kiraan hari; pendapatan, komitmen + hutang, baki, DSR (<40% sihat, 40–60% berhati-hati, >60% tinggi); campuran pendapatan aktif/sampingan/pasif; kemajuan sasaran pasif; peringatan tarikh bayar 14 hari (butang "Dah bayar" auto-rekod transaksi); graf trend 6/12 bulan (SVG inline); ringkasan emas & ASB; langkah seterusnya.
-2. **Kewangan** — sumber pendapatan; rekod transaksi ikut bulan; sasaran emas (gram) & ASB (stage 1/2); dana kecemasan.
+1. **Ringkasan** — hero "cop passport" 2026–2030 + kiraan hari; pendapatan, komitmen + hutang, baki, DSR (<40% sihat, 40–60% berhati-hati, >60% tinggi); campuran pendapatan aktif/sampingan/pasif; kemajuan sasaran pasif; peringatan tarikh bayar 14 hari (butang "Dah bayar" auto-rekod transaksi); graf trend 6/12 bulan (SVG inline); ringkasan emas & dana kecemasan; langkah seterusnya.
+2. **Kewangan** — sumber pendapatan; rekod transaksi ikut bulan; sasaran emas (gram); dana kecemasan berperingkat: Stage 1 ASB RM15,000 → Stage 2 Tabung Haji RM15,000 (`emergencyCalc`), % dihadkan per stage, tunjuk berapa bulan komitmen+hutang boleh ditampung (termasuk `savings` = simpanan tunai lain).
 3. **Hutang/Kad** — kad kredit (had, baki, % penggunaan <30% sihat, belanja bulan ikut kategori, bayaran minimum ≈5%/RM50, rekod belanja & bayaran; bayaran kad juga direkod dalam `tx`); komitmen bulanan (tarikh bayar); hutang disusun ikut faedah tertinggi (avalanche) dengan anggaran tarikh selesai.
 4. **Pelan 2030** — matlamat ikut tahun, templat cadangan (TTT → HRD Corp → modul pematuhan → app AI → pasif).
 5. **Niaga** — projek dengan peringkat Idea → Validasi → Bina → Lancar → Skala + senarai langkah proses; templat idea.
@@ -19,7 +19,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 ## Model data (satu objek `S`)
 ```js
 {
-  v: 3,
+  v: 4,
   updatedAt: Number,   // ms, untuk penyegerakan awan (v2)
   settings: { name, targetPassive, emergencyMonths, notify, notifyDays },
   savings: Number,
@@ -33,7 +33,8 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
   cardTx:      [{ id, cardId, date, type: "belanja"|"bayar"|"awal", amount, cat, note }],  // v3
   paid:        { "<itemId>:<YYYY-MM>": true },   // peringatan yang sudah dibayar
   gold: { have, target: 30, price, by: "YYYY-MM" },
-  asb:  { have, s1: 15000, s2: 30000, s1by, s2by }
+  asb:  { have, s1: 15000, s1by },            // dana kecemasan stage 1 (ASB); asb.s2/s2by lama dikekalkan tetapi tidak digunakan
+  th:   { have, target: 15000, by }           // v4: dana kecemasan stage 2 (Tabung Haji)
 }
 ```
 `normalize()` menggabungkan data lama dengan nilai lalai — kekalkan apabila menambah medan baru.

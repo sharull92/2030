@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -28,7 +28,8 @@ test("calc: DSR dan campuran", () => {
   assert.equal(c.dsr, 40);
   assert.equal(c.dsrLevel, "berhati-hati");
   assert.equal(c.passivePct, 50);
-  assert.equal(c.emergencyTarget, 12000);
+  assert.equal(c.emergencyTarget, 30000);
+  assert.equal(c.emergencyMonths, 0);
   assert.equal(L.calc(L.normalize({ incomes: [{ amount: 1000 }], commitments: [{ amount: 300 }] })).dsrLevel, "sihat");
   assert.equal(L.calc(L.normalize({ incomes: [{ amount: 1000 }], commitments: [{ amount: 700 }] })).dsrLevel, "tinggi");
 });
@@ -72,7 +73,7 @@ test("normalize kekalkan data lama dan isi lalai", () => {
   assert.equal(o.gold.have, 5);
   assert.equal(o.gold.target, 30);
   assert.deepEqual(o.tx, []);
-  assert.equal(o.v, 3);
+  assert.equal(o.v, 4);
   assert.deepEqual(o.cards, []);
   assert.deepEqual(o.cardTx, []);
   assert.equal(o.updatedAt, 0);
@@ -118,7 +119,7 @@ test("upcoming: kad kredit dengan baki muncul, tanpa baki tidak", () => {
 
 test("normalize: data v2 dinaik taraf ke v3 tanpa hilang data", () => {
   const o = L.normalize({ v: 2, updatedAt: 5, incomes: [{ id: "a", amount: 1 }] });
-  assert.equal(o.v, 3);
+  assert.equal(o.v, 4);
   assert.equal(o.updatedAt, 5);
   assert.equal(o.incomes.length, 1);
 });
@@ -140,4 +141,33 @@ test("buildICS: acara bulanan berulang dengan peringatan", () => {
   assert.ok(ics.includes("TRIGGER:-P2DT15H"));
   assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 4);
   assert.equal((L.buildICS(S, new Date(2026, 10, 4), 0).match(/BEGIN:VALARM/g) || []).length, 2);
+});
+
+test("dana kecemasan: stage 1 ASB → stage 2 Tabung Haji", () => {
+  const t = new Date(2026, 10, 4);
+  let S = L.normalize({ asb: { have: 6000 }, th: { have: 0 }, commitments: [{ amount: 1500 }] });
+  let e = L.emergencyCalc(S, t), c = L.calc(S);
+  assert.equal(e.stage, 1);
+  assert.equal(e.s1.need, 9000);
+  assert.equal(c.emergencyTarget, 30000);
+  assert.equal(c.emergencyPct, 20);
+  assert.equal(c.emergencyMonths, 4);
+  // lebihan ASB tidak menutup Tabung Haji
+  S = L.normalize({ asb: { have: 25000 }, th: { have: 3000 } });
+  e = L.emergencyCalc(S, t); c = L.calc(S);
+  assert.equal(e.stage, 2);
+  assert.equal(e.s2.need, 12000);
+  assert.equal(c.emergencyPct, 60);
+  assert.equal(L.emergencyCalc(L.normalize({ asb: { have: 15000 }, th: { have: 15000 } }), t).stage, 3);
+});
+
+test("migrasi v3 → v4: data ASB lama dikekalkan, tarikh stage 2 dibawa ke Tabung Haji", () => {
+  const o = L.normalize({ v: 3, asb: { have: 7000, s1: 15000, s2: 30000, s1by: "2027-06", s2by: "2029-12" }, savings: 2000 });
+  assert.equal(o.v, 4);
+  assert.equal(o.asb.have, 7000);
+  assert.equal(o.asb.s1by, "2027-06");
+  assert.equal(o.asb.s2, 30000);
+  assert.equal(o.th.by, "2029-12");
+  assert.equal(o.th.target, 15000);
+  assert.equal(o.savings, 2000);
 });
