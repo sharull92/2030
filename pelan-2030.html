@@ -547,7 +547,7 @@ function vRingkasan() {
     <p class="small muted">${gs.need ? `${(gs.perMonth).toFixed(2)} g sebulan hingga ${fmtYM(S.gold.by)}` : "Sasaran tercapai 🎉"}</p>
     <div class="row between small" style="margin-top:6px"><span>Dana kecemasan ${RM(c.emergencyHave)} / ${RM(c.emergencyTarget)}</span><span>${c.emergencyPct.toFixed(0)}%</span></div>
     ${bar(c.emergencyPct)}
-    <p class="small muted">${em.stage === 3 ? "Kedua-dua stage tercapai 🎉" : em.stage === 1 ? `Stage 1 · ASB: ${RM(S.asb.have)} / ${RM(S.asb.s1)}` : `Stage 1 ✓ · Stage 2 · Tabung Haji: ${RM(S.th.have)} / ${RM(S.th.target)}`}</p>
+    <p class="small muted">${em.stage === 3 ? "Kedua-dua stage tercapai 🎉" : em.stage === 1 ? `Stage 1 (ASB): ${RM(S.asb.have)} / ${RM(S.asb.s1)}` : `Stage 1 (ASB) ✓ · Stage 2 (Tabung Haji): ${RM(S.th.have)} / ${RM(S.th.target)}`}</p>
   </section>
 
   <section class="card">
@@ -613,13 +613,13 @@ function vKewangan() {
     <p class="small muted">${c.out > 0 ? `Bersamaan ≈ ${c.emergencyMonths.toFixed(1)} bulan komitmen + hutang (${RM(c.out)} sebulan)${S.savings ? `, termasuk simpanan lain ${RM(S.savings)}` : ""}.` : "Tambah komitmen dan hutang untuk lihat berapa bulan dana ini boleh bertahan."}</p>
 
     <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
-      <div class="row between"><h3 style="margin:0">Stage 1 · ASB</h3>${pill(1)}</div>
+      <div class="row between"><h3 style="margin:0">Stage 1 (ASB) · ${RM(S.asb.s1)}</h3>${pill(1)}</div>
       <div class="row between small" style="margin-top:6px"><span>${RM(S.asb.have)} / ${RM(S.asb.s1)} menjelang ${fmtYM(S.asb.s1by)}</span><span>${s1.pct.toFixed(0)}%</span></div>
       ${bar(s1.pct, "amber")}
       <p class="small muted">${stLine(s1, "Stage 1")}</p>
     </div>
     <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
-      <div class="row between"><h3 style="margin:0">Stage 2 · Tabung Haji</h3>${pill(2)}</div>
+      <div class="row between"><h3 style="margin:0">Stage 2 (Tabung Haji) · ${RM(S.th.target)}</h3>${pill(2)}</div>
       <div class="row between small" style="margin-top:6px"><span>${RM(S.th.have)} / ${RM(S.th.target)} menjelang ${fmtYM(S.th.by)}</span><span>${s2.pct.toFixed(0)}%</span></div>
       ${bar(s2.pct, "gold")}
       <p class="small muted">${stLine(s2, "Stage 2")}</p>
