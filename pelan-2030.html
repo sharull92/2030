@@ -286,18 +286,20 @@ function monthOut(S, today) {
   return { spent, pending, total: spent + pending, received, byCat, cardSpend: sum(cardSpend, t => t.amount) };
 }
 
-// Ringkasan setahun. Pendapatan: bagi setiap bulan yang ada rekod (dan bulan semasa), guna jumlah
+// Ringkasan setahun (year = 0 → semua tahun). Pendapatan: bagi setiap bulan yang ada rekod (dan bulan semasa), guna jumlah
 // "Masuk" sebenar; jika tiada, guna pendapatan bulanan dirancang.
 function yearSummary(S, year, today) {
   const Y = String(year), curYM = ym(today);
-  const inY = t => String(t.date).slice(0, 4) === Y;
+  const all = !Number(year);
+  const inY = t => all || String(t.date).slice(0, 4) === Y;
   const txOut = S.tx.filter(t => t.type === "out" && inY(t) && t.cat !== "Kad kredit");
   const cardSpend = S.cardTx.filter(t => t.type === "belanja" && inY(t));
   const txIn = S.tx.filter(t => t.type === "in" && inY(t));
   const byCat = {};
   for (const t of [...txOut, ...cardSpend]) { const c = String(t.cat || "Lain-lain").trim() || "Lain-lain"; byCat[c] = (byCat[c] || 0) + (Number(t.amount) || 0); }
   const months = new Set([...txOut, ...cardSpend, ...txIn].map(t => String(t.date).slice(0, 7)));
-  if (Number(year) === today.getFullYear()) months.add(curYM);
+  const incCurrent = all || Number(year) === today.getFullYear();
+  if (incCurrent) months.add(curYM);
   const planned = sum(S.incomes, i => i.amount);
   let income = 0;
   for (const m of months) {
@@ -305,7 +307,7 @@ function yearSummary(S, year, today) {
     income += rec > 0 ? rec : planned;
   }
   const spent = sum(txOut, t => t.amount) + sum(cardSpend, t => t.amount);
-  const pending = Number(year) === today.getFullYear() ? monthOut(S, today).pending : 0;
+  const pending = incCurrent ? monthOut(S, today).pending : 0;
   return { income, spent, pending, balance: income - spent - pending, byCat, months: months.size, received: sum(txIn, t => t.amount) };
 }
 
@@ -698,8 +700,8 @@ function vRingkasan() {
   </section>
 
   <section class="card">
-    <div class="row between"><h2>Ringkasan ${sumYear}</h2>
-      <select data-act="sumyear" aria-label="Pilih tahun" style="width:auto">${years.map(y => `<option value="${y}" ${y === sumYear ? "selected" : ""}>Tahun ${y}</option>`).join("")}</select></div>
+    <div class="row between"><h2>Ringkasan ${sumYear || "2026–2030"}</h2>
+      <select data-act="sumyear" aria-label="Pilih tahun" style="width:auto"><option value="0" ${sumYear ? "" : "selected"}>Semua tahun</option>${years.map(y => `<option value="${y}" ${y === sumYear ? "selected" : ""}>Tahun ${y}</option>`).join("")}</select></div>
     <div class="row between small muted" style="margin:-2px 0 8px"><span>${ys.months} bulan direkod</span>${dsrPill(c)}</div>
     <div class="grid3">
       <div class="stat"><span>Pendapatan</span><b>${RM(ys.income)}</b></div>
@@ -707,7 +709,7 @@ function vRingkasan() {
       <div class="stat"><span>${ys.pending ? "Baki dijangka" : "Baki"}</span><b class="${ys.balance >= 0 ? "pos" : "neg"}">${RM(ys.balance)}</b></div>
     </div>
     ${Object.keys(ys.byCat).length ? `<h3 style="margin-top:14px">Duit keluar ikut kategori</h3>
-    <ul class="list">${Object.entries(ys.byCat).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<li style="padding:6px 0"><div class="grow">${esc(n)}<div class="bar" style="margin-top:4px;height:6px"><i style="width:${(v / ys.spent * 100).toFixed(1)}%;background:var(--red)"></i></div></div><span class="num">${RM(v)}</span></li>`).join("")}</ul>` : `<p class="empty">Tiada duit keluar direkod untuk ${sumYear}.</p>`}
+    <ul class="list">${Object.entries(ys.byCat).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<li style="padding:6px 0"><div class="grow">${esc(n)}<div class="bar" style="margin-top:4px;height:6px"><i style="width:${(v / ys.spent * 100).toFixed(1)}%;background:var(--red)"></i></div></div><span class="num">${RM(v)}</span></li>`).join("")}</ul>` : `<p class="empty">Tiada duit keluar direkod${sumYear ? " untuk " + sumYear : ""}.</p>`}
     <h3 style="margin-top:14px">Campuran pendapatan</h3>
     <div class="mix" aria-hidden="true">${["aktif", "sampingan", "pasif"].map(k => `<i style="width:${c.mix[k] / mixT * 100}%;background:${MIXC[k]}"></i>`).join("")}</div>
     <div class="row small" style="margin-top:6px">${["aktif", "sampingan", "pasif"].map(k => `<span><span style="color:${MIXC[k]}">■</span> ${k[0].toUpperCase() + k.slice(1)} ${RM(c.mix[k])}</span>`).join("")}</div>

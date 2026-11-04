@@ -270,4 +270,9 @@ test("yearSummary: tapis tahun; pendapatan ikut bulan direkod", () => {
   assert.equal(y27.spent, 30);
   assert.equal(y27.income, 4782);
   assert.equal(y27.pending, 0);
+  const sem = L.yearSummary(S, 0, new Date(2026, 10, 10));   // semua tahun
+  assert.equal(sem.months, 4);
+  assert.equal(sem.spent, 150 + 72 + 60 + 30);
+  assert.equal(sem.income, 4782 + 5000 + 4782 + 4782);
+  assert.equal(sem.pending, 900);
 });
