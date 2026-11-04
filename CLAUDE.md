@@ -63,6 +63,10 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - Repo pengguna `hrsahrulsazly-bit/2030` ada GitHub Action `.github/workflows/segerak.yml` (salinan di `github-sync/segerak.yml`) yang menarik branch ini setiap 15 minit dan commit ke `main` — kecuali `config.js` dan `.github/`. Commit dibuat atas nama `github.actor` (bukan bot) kerana Vercel Hobby tidak deploy commit bot. Vercel deploy daripada `main`. Perubahan pada fail workflow mesti disalin manual oleh pengguna (folder `.github/` dikecualikan).
 - Jadi: cukup push ke branch ini; jangan ubah `config.js` dengan kunci sebenar di sini.
 
+## Format nombor
+- Wang: `RM()` sentiasa 2 tempat perpuluhan (RM 4,782.00), dibundar ke sen. Semua input wang `step="0.01" inputmode="decimal"`.
+- Emas: `fmtG()` hingga 3 tempat perpuluhan (1.025 g); input gram `step="0.001"`.
+
 ## Gaya reka bentuk
 - Fon: Bricolage Grotesque (tajuk), IBM Plex Sans (teks).
 - Warna (token pada `:root`, ada mod gelap): kertas `#ECF0ED`, dakwat `#17263A`, merah passport `#7A1F2B`, teal `#2C6B66`, amber `#A86A12`, emas `#B8892B`.

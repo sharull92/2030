@@ -471,7 +471,7 @@ function findLost(S, snapshots) {
   return Object.values(out);
 }
 function describeItem(list, it) {
-  const rm = n => "RM" + Math.round(Number(n) || 0).toLocaleString("ms-MY");
+  const rm = n => "RM" + (Number(n) || 0).toLocaleString("ms-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   switch (list) {
     case "incomes": return `${it.name} · ${rm(it.amount)}/bln`;
     case "commitments": return `${it.name} · ${rm(it.amount)} (hari ${it.day || "—"})`;
@@ -507,7 +507,7 @@ function buildICS(S, today, notifyDays = 3) {
     let start = new Date(today.getFullYear(), today.getMonth(), Math.min(it.day, dim(today.getFullYear(), today.getMonth())));
     if (last) start = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
-    const title = "Bayar " + it.name + (it.amount ? " — RM" + Math.round(it.amount) : "");
+    const title = "Bayar " + it.name + (it.amount ? " — RM" + (Number(it.amount) || 0).toFixed(2) : "");
     lines.push("BEGIN:VEVENT", `UID:${it.id}@pelan2030`, `DTSTAMP:${stamp}`,
       `DTSTART;VALUE=DATE:${d8(start)}`, `DTEND;VALUE=DATE:${d8(end)}`,
       `RRULE:FREQ=MONTHLY;BYMONTHDAY=${last ? -1 : it.day};UNTIL=20301231`,
@@ -570,8 +570,10 @@ const KEY = "pelan2030";
 const END = new Date(2030, 11, 31);
 const STAGES = ["Idea", "Validasi", "Bina", "Lancar", "Skala"];
 const MIXC = { aktif: "var(--ink)", sampingan: "var(--amber)", pasif: "var(--teal)" };
-const fmtRM = new Intl.NumberFormat("ms-MY", { style: "currency", currency: "MYR", maximumFractionDigits: 0 });
-const RM = n => isFinite(n) ? fmtRM.format(Math.round(n)).replace("MYR", "RM") : "—";
+const fmtRM = new Intl.NumberFormat("ms-MY", { style: "currency", currency: "MYR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const RM = n => isFinite(n) ? fmtRM.format(Math.round(n * 100) / 100 + 0).replace("MYR", "RM") : "—";
+// Gram emas: hingga 3 tempat perpuluhan (cth. 1.025 g)
+const fmtG = n => (Number(n) || 0).toLocaleString("ms-MY", { minimumFractionDigits: 0, maximumFractionDigits: 3 }) + " g";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const BULAN = ["Jan","Feb","Mac","Apr","Mei","Jun","Jul","Ogo","Sep","Okt","Nov","Dis"];
@@ -929,9 +931,9 @@ function vRingkasan() {
 
   <section class="card">
     <h2>Emas & dana kecemasan</h2>
-    <div class="row between small"><span>Emas ${S.gold.have} / ${S.gold.target} g</span><span>${gs.pct.toFixed(0)}%</span></div>
+    <div class="row between small"><span>Emas ${fmtG(S.gold.have)} / ${fmtG(S.gold.target)}</span><span>${gs.pct.toFixed(0)}%</span></div>
     ${bar(gs.pct, "gold")}
-    <p class="small muted">${gs.need ? `${(gs.perMonth).toFixed(2)} g sebulan hingga ${fmtYM(S.gold.by)}` : "Sasaran tercapai 🎉"}</p>
+    <p class="small muted">${gs.need ? `${fmtG(gs.perMonth)} sebulan hingga ${fmtYM(S.gold.by)}` : "Sasaran tercapai 🎉"}</p>
     <div class="row between small" style="margin-top:6px"><span>Dana kecemasan ${RM(c.emergencyHave)} / ${RM(c.emergencyTarget)}</span><span>${c.emergencyPct.toFixed(0)}%</span></div>
     ${bar(c.emergencyPct)}
     <p class="small muted">${em.stage === 3 ? "Kedua-dua stage tercapai 🎉" : em.stage === 1 ? `Stage 1 (ASB): ${RM(S.asb.have)} / ${RM(S.asb.s1)}` : `Stage 1 (ASB) ✓ · Stage 2 (Tabung Haji): ${RM(S.th.have)} / ${RM(S.th.target)}`}</p>
@@ -984,7 +986,7 @@ function reportHTML(r) {
   ${tbl(["Perkara", "Ada", "Sasaran", "%"], [
     ["Dana kecemasan · Stage 1 (ASB)", R(r.emergency.asb), R(r.emergency.asbTarget), r.emergency.asbTarget ? Math.min(100, r.emergency.asb / r.emergency.asbTarget * 100) : 0],
     ["Dana kecemasan · Stage 2 (Tabung Haji)", R(r.emergency.th), R(r.emergency.thTarget), r.emergency.thTarget ? Math.min(100, r.emergency.th / r.emergency.thTarget * 100) : 0],
-    ["Emas", r.gold.have + " g", r.gold.target + " g", r.gold.target ? Math.min(100, r.gold.have / r.gold.target * 100) : 0]
+    ["Emas", fmtG(r.gold.have), fmtG(r.gold.target), r.gold.target ? Math.min(100, r.gold.have / r.gold.target * 100) : 0]
   ].map(x => `<tr><td>${x[0]}</td><td>${x[1]}</td><td>${x[2]}</td><td class="r">${x[3].toFixed(0)}%</td></tr>`).join(""))}
   <footer>Dijana ${now} · Pelan 2030 · baki kad, hutang & simpanan ialah nilai semasa.</footer>
   </div>`;
@@ -1055,13 +1057,13 @@ function vKewangan() {
 
   <section class="card">
     <h2>Sasaran emas</h2>
-    <div class="row between small"><span>${S.gold.have} / ${S.gold.target} g · nilai ${RM(S.gold.have * S.gold.price)}</span><span>${gs.pct.toFixed(0)}%</span></div>
+    <div class="row between small"><span>${fmtG(S.gold.have)} / ${fmtG(S.gold.target)} · nilai ${RM(S.gold.have * S.gold.price)}</span><span>${gs.pct.toFixed(0)}%</span></div>
     ${bar(gs.pct, "gold")}
-    <p class="small muted">${gs.need ? `Perlu ${gs.need.toFixed(2)} g lagi · ${isFinite(gs.perMonth) ? gs.perMonth.toFixed(2) + " g sebulan" : "tarikh sasaran sudah lepas"}${S.gold.price ? ` (≈ ${RM(gs.perMonth * S.gold.price)})` : ""}` : "Sasaran tercapai 🎉"}</p>
+    <p class="small muted">${gs.need ? `Perlu ${fmtG(gs.need)} lagi · ${isFinite(gs.perMonth) ? fmtG(gs.perMonth) + " sebulan" : "tarikh sasaran sudah lepas"}${S.gold.price ? ` (≈ ${RM(gs.perMonth * S.gold.price)})` : ""}` : "Sasaran tercapai 🎉"}</p>
     <form class="add" data-form="gold">
-      <label>Ada (gram)<input name="have" type="number" step="0.01" min="0" value="${S.gold.have}"></label>
-      <label>Sasaran (gram)<input name="target" type="number" step="0.01" min="0" value="${S.gold.target}"></label>
-      <label>Harga RM/gram<input name="price" type="number" step="0.01" min="0" value="${S.gold.price}"></label>
+      <label>Ada (gram)<input name="have" type="number" inputmode="decimal" step="0.001" min="0" value="${S.gold.have}"></label>
+      <label>Sasaran (gram)<input name="target" type="number" inputmode="decimal" step="0.001" min="0" value="${S.gold.target}"></label>
+      <label>Harga RM/gram<input name="price" type="number" inputmode="decimal" step="0.01" min="0" value="${S.gold.price}"></label>
       <label>Menjelang<input name="by" type="month" value="${S.gold.by}"></label>
       <button>Simpan</button>
     </form>
@@ -1088,13 +1090,13 @@ function vKewangan() {
 
     <details style="margin-top:12px"><summary>Kemas kini baki & sasaran</summary>
     <form class="add" data-form="emergency">
-      <label>Baki ASB (RM)<input name="asbHave" type="number" step="0.01" min="0" value="${S.asb.have}"></label>
-      <label>Sasaran stage 1 (RM)<input name="s1" type="number" min="0" value="${S.asb.s1}"></label>
+      <label>Baki ASB (RM)<input name="asbHave" type="number" inputmode="decimal" step="0.01" min="0" value="${S.asb.have}"></label>
+      <label>Sasaran stage 1 (RM)<input name="s1" type="number" inputmode="decimal" step="0.01" min="0" value="${S.asb.s1}"></label>
       <label>Stage 1 menjelang<input name="s1by" type="month" value="${S.asb.s1by}"></label>
-      <label>Baki Tabung Haji (RM)<input name="thHave" type="number" step="0.01" min="0" value="${S.th.have}"></label>
-      <label>Sasaran stage 2 (RM)<input name="thTarget" type="number" min="0" value="${S.th.target}"></label>
+      <label>Baki Tabung Haji (RM)<input name="thHave" type="number" inputmode="decimal" step="0.01" min="0" value="${S.th.have}"></label>
+      <label>Sasaran stage 2 (RM)<input name="thTarget" type="number" inputmode="decimal" step="0.01" min="0" value="${S.th.target}"></label>
       <label>Stage 2 menjelang<input name="thBy" type="month" value="${S.th.by}"></label>
-      <label>Simpanan tunai lain (RM)<input name="savings" type="number" step="0.01" min="0" value="${S.savings}"></label>
+      <label>Simpanan tunai lain (RM)<input name="savings" type="number" inputmode="decimal" step="0.01" min="0" value="${S.savings}"></label>
       <button class="primary">Simpan</button>
     </form></details>
   </section>`;
@@ -1129,16 +1131,16 @@ function vKad() {
       ${bar(k.util, k.util > 70 ? "" : "amber")}
       <div class="grid3" style="margin-top:8px">${stat("Belanja bulan ini", RM(k.monthSpend))}${stat("Bayaran minimum ≈", RM(k.minPay))}${stat("Faedah sebulan jika tak bayar penuh ≈", RM(k.interest))}</div>
       ${Object.keys(k.byCat).length ? `<p class="small muted" style="margin:.5rem 0 0">${Object.entries(k.byCat).sort((a, b) => b[1] - a[1]).map(([n, v]) => `${esc(n)} ${RM(v)}`).join(" · ")}</p>` : ""}
-      ${k.balance > 0 ? `<form class="add" data-form="cardpay" data-id="${c.id}" style="grid-template-columns:1fr auto"><input name="amount" type="number" min="0" step="0.01" value="${k.balance.toFixed(2)}" aria-label="Jumlah bayaran"><button>Rekod bayaran kad</button></form>` : ""}
+      ${k.balance > 0 ? `<form class="add" data-form="cardpay" data-id="${c.id}" style="grid-template-columns:1fr auto"><input name="amount" type="number" inputmode="decimal" min="0" step="0.01" value="${k.balance.toFixed(2)}" aria-label="Jumlah bayaran"><button>Rekod bayaran kad</button></form>` : ""}
     </div>`).join("")}
     ${totUtil >= 30 ? `<p class="small muted">Tip: kekalkan penggunaan bawah 30% had dan bayar penuh setiap bulan untuk elak caj faedah.</p>` : ""}` : `<p class="empty">Belum ada kad. Tambah kad di bawah.</p>`}
     <details style="margin-top:12px"><summary>Tambah kad</summary>
     <form class="add" data-form="card">
       <label>Nama kad<input name="name" required placeholder="cth. Maybank Visa"></label>
-      <label>Had kredit (RM)<input name="limit" type="number" min="0" step="0.01" required></label>
+      <label>Had kredit (RM)<input name="limit" type="number" inputmode="decimal" min="0" step="0.01" required></label>
       <label>Hari tarikh akhir bayar<input name="dueDay" type="number" min="1" max="31"></label>
-      <label>Faedah setahun (%)<input name="rate" type="number" min="0" step="0.01" value="15"></label>
-      <label>Baki semasa (RM)<input name="opening" type="number" min="0" step="0.01" value="0"></label>
+      <label>Faedah setahun (%)<input name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="15"></label>
+      <label>Baki semasa (RM)<input name="opening" type="number" inputmode="decimal" min="0" step="0.01" value="0"></label>
       <button class="primary">Tambah kad</button>
     </form></details>
   </section>
@@ -1173,7 +1175,7 @@ function vHutang() {
     ${S.commitments.length ? `<ul class="list">${S.commitments.map(x => `<li><div class="grow"><div>${esc(x.name)}</div><div class="small muted">Bayar setiap ${x.day || "—"} haribulan</div></div><span class="num">${RM(x.amount)}</span>${del("commitments", x.id)}</li>`).join("")}</ul>` : `<p class="empty">Tiada komitmen.</p>`}
     <form class="add" data-form="commitment">
       <label>Nama<input name="name" required placeholder="cth. Sewa rumah"></label>
-      <label>Jumlah (RM)<input name="amount" type="number" min="0" step="0.01" required></label>
+      <label>Jumlah (RM)<input name="amount" type="number" inputmode="decimal" min="0" step="0.01" required></label>
       <label>Hari bayar<input name="day" type="number" min="1" max="31" required></label>
       <button class="primary">Tambah</button>
     </form>
@@ -1188,15 +1190,15 @@ function vHutang() {
       return `<li style="display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)"><span class="pill ${i === 0 ? "bad" : ""}">#${i + 1}</span>
         <div class="grow" style="flex:1;min-width:0"><div>${esc(d.name)} · <span class="muted">${d.rate}%</span></div>
         <div class="small ${end ? "muted" : "neg"}">${end ? `Selesai ≈ ${end} (${n} bulan)` : "Bayaran tidak menampung faedah"} · hari ${d.day || "—"}</div>
-        <div class="row small" style="margin-top:4px"><label style="display:flex;align-items:center;gap:6px">Baki <input type="number" min="0" step="0.01" value="${d.balance}" data-act="debtbal" data-id="${d.id}" style="width:120px"></label></div></div>
+        <div class="row small" style="margin-top:4px"><label style="display:flex;align-items:center;gap:6px">Baki <input type="number" inputmode="decimal" min="0" step="0.01" value="${d.balance}" data-act="debtbal" data-id="${d.id}" style="width:120px"></label></div></div>
         <span class="num">${RM(d.payment)}</span>${del("debts", d.id)}</li>`;
     }).join("")}</ol>
     <p class="small muted">Tip: bayar minimum untuk semua, lebihan dimasukkan ke hutang #1.</p>` : `<p class="empty">Tiada hutang. 👏</p>`}
     <form class="add" data-form="debt">
       <label>Nama<input name="name" required placeholder="cth. Kad kredit"></label>
-      <label>Baki (RM)<input name="balance" type="number" min="0" step="0.01" required></label>
-      <label>Faedah setahun (%)<input name="rate" type="number" min="0" step="0.01" required></label>
-      <label>Bayaran sebulan (RM)<input name="payment" type="number" min="0" step="0.01" required></label>
+      <label>Baki (RM)<input name="balance" type="number" inputmode="decimal" min="0" step="0.01" required></label>
+      <label>Faedah setahun (%)<input name="rate" type="number" inputmode="decimal" min="0" step="0.01" required></label>
+      <label>Bayaran sebulan (RM)<input name="payment" type="number" inputmode="decimal" min="0" step="0.01" required></label>
       <label>Hari bayar<input name="day" type="number" min="1" max="31"></label>
       <button class="primary">Tambah</button>
     </form>
@@ -1267,7 +1269,7 @@ function vNiaga() {
     <form class="add" data-form="venture">
       <label>Nama<input name="name" required></label>
       <label>Jenis<input name="kind" placeholder="cth. Produk AI"></label>
-      <label>Sasaran RM/bln<input name="target" type="number" min="0"></label>
+      <label>Sasaran RM/bln<input name="target" type="number" inputmode="decimal" step="0.01" min="0"></label>
       <button class="primary">Tambah</button>
     </form>
   </section>`;
@@ -1378,7 +1380,7 @@ function vTetapan() {
     <h2>Profil</h2>
     <form class="add" data-form="settings">
       <label>Nama<input name="name" value="${esc(S.settings.name)}"></label>
-      <label>Sasaran pasif (RM/bln)<input name="targetPassive" type="number" min="0" value="${S.settings.targetPassive}"></label>
+      <label>Sasaran pasif (RM/bln)<input name="targetPassive" type="number" inputmode="decimal" step="0.01" min="0" value="${S.settings.targetPassive}"></label>
       <button class="primary">Simpan</button>
     </form>
   </section>

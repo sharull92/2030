@@ -1,7 +1,7 @@
 // Service worker: rangkaian dahulu untuk fail app (sentiasa versi terkini),
 // cache sebagai sandaran apabila luar talian. Permintaan ke domain lain (Supabase, CDN) tidak diganggu.
 // Juga: notifikasi tarikh bayar (semak bila app dibuka + Periodic Background Sync).
-const CACHE = "pelan2030-v4";
+const CACHE = "pelan2030-v5";
 const DATA = "pelan2030-data"; // senarai peringatan dari app + log notifikasi — jangan dipadam
 const ASSETS = ["./", "index.html", "pelan-2030.html", "config.js", "manifest.webmanifest", "icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png"];
 
@@ -43,7 +43,7 @@ async function semak() {
     if (diff > days || diff < -31 || log[it.key] === hariIni) continue;
     const bila = diff < 0 ? `lewat ${-diff} hari` : diff === 0 ? "hari ini" : diff === 1 ? "esok" : `dalam ${diff} hari`;
     await self.registration.showNotification(`Bayar ${it.name} ${bila}`, {
-      body: `RM ${Math.round(it.amount).toLocaleString("ms-MY")} · tarikh ${d} ${BULAN[m - 1]} ${y}`,
+      body: `RM ${(Number(it.amount) || 0).toLocaleString("ms-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · tarikh ${d} ${BULAN[m - 1]} ${y}`,
       icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag: it.key, data: { url: "pelan-2030.html" }
     });
     log[it.key] = hariIni;
