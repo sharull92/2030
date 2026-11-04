@@ -12,6 +12,7 @@ App perancangan kewangan dan kerjaya peribadi hingga 31 Disember 2030. Satu fail
 3. **Vercel → Add New → Project:** import repo `2030`, Framework Preset **Other**, tiada build command, tekan Deploy.
 4. **Supabase → Authentication → URL Configuration:** letak URL Vercel (cth. `https://2030-xxx.vercel.app`) sebagai *Site URL*, dan tambah `https://2030-xxx.vercel.app/**` dalam *Redirect URLs*.
 5. Buka app → **Tetapan → Penyegerakan awan** → masukkan e-mel → klik pautan dalam e-mel.
+6. **Kongsi dengan e-mel lain:** di bahagian *Kongsi pelan*, masukkan e-mel kedua → **Jemput**. Orang itu log masuk dengan e-mel tersebut di telefonnya dan terus nampak data yang sama; perubahan muncul di kedua-dua telefon secara automatik.
 
 ## Tab
 1. **Ringkasan** — kiraan hari, pendapatan, komitmen, baki, DSR, campuran pendapatan, peringatan bayaran 14 hari, trend 6/12 bulan, emas & ASB, langkah seterusnya.

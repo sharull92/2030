@@ -42,7 +42,11 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 ## Storan — PENTING
 - Utama: `localStorage` (kunci `pelan2030`) — app berfungsi luar talian tanpa akaun.
 - Awan (pilihan): Supabase. Tetapan dibaca dari `config.js`; jika kosong, app ambil dari fungsi Vercel `api/supabase-config.js` yang membaca env integrasi Supabase ↔ Vercel (`NEXT_PUBLIC_SUPABASE_URL`/`SUPABASE_URL` + kunci publishable/anon sahaja — JANGAN pulangkan service_role/secret). Nama fail sengaja bukan `config.js` kerana workflow segerak mengecualikan semua `config.js`. `config.js` mengandungi `supabaseUrl` + kunci publishable/anon (selamat, dilindungi RLS — jangan sekali-kali letak kunci secret/service_role). Jadual `public.plans (user_id, data jsonb, updated_at)` — skema dalam `supabase/schema.sql`.
-- Log masuk melalui pautan e-mel (`signInWithOtp`). Selepas log masuk, app tarik data awan; versi dengan `updatedAt` lebih baharu menang (keseluruhan dokumen). Setiap `commit()` menolak ke awan (debounce 1.2 s). Data ditarik semula apabila tab kembali aktif.
+- Log masuk melalui pautan e-mel (`signInWithOtp`).
+- **Pelan dikongsi** (beberapa e-mel, data sama): jadual `shared_plans (id, owner_id, owner_email, data jsonb, version)` + `plan_members (plan_id, email huruf kecil)`; RLS: pemilik atau ahli (ikut e-mel JWT) boleh baca/ubah `data`; hanya pemilik jemput/buang ahli; ahli boleh keluar sendiri; ahli tidak boleh ubah `owner_id` (geran lajur). Polisi `shared_plans` semak `owner_id` terus pada baris (fungsi security definer tidak nampak baris baru dalam `INSERT … RETURNING`).
+- `findPlan()` utamakan pelan orang lain (saya dijemput), kemudian pelan sendiri; jika tiada, cipta daripada data peranti / jadual lama `plans` (yang lebih baharu). Penyertai baru: ambil data pelan, data lama peranti disimpan di `localStorage["pelan2030:sandaran-sebelum-kongsi"]`.
+- Segerak = gabungan tiga hala `mergePlan(base, local, remote)` (`merge3`: senarai ber-`id` digabung ikut item, objek ikut kunci, konflik medan sama → peranti ini, suntingan menang atas pemadaman). `base` = versi terakhir disegerak (`localStorage["pelan2030:base"]`). Tulis dengan kunci versi (`update … eq("version", v)`; ulang jika orang lain tulis dahulu). Bandingan guna `stable()` kerana jsonb menyusun semula kunci.
+- Realtime: langgan `postgres_changes` UPDATE pada baris pelan → `syncNow()`. Juga segerak bila tab aktif semula dan 1.2 s selepas setiap `commit()`.
 - Sandaran: `Blob` + `<a download>`; pulih melalui fail JSON.
 - PWA: ikon PNG 192/512 (any + maskable) dalam `icons/` — wajib supaya Chrome Android pasang sebagai app sebenar (WebAPK) tanpa lencana Chrome. Butang "Pasang app" di Tetapan guna `beforeinstallprompt`.
 - Notifikasi: app tulis `upcoming(S, today, 45)` ke Cache `pelan2030-data` → `/__peringatan.json` pada setiap `commit()` dan semasa dibuka; `sw.js` (`semak()`) papar notifikasi bagi item dalam N hari / lewat, sekali sehari setiap item (log `/__dimaklum.json`). Dicetus oleh mesej `semak` dari app dan `periodicsync` (tag `peringatan`, Chrome Android bila dipasang). Tiada server/Web Push.
@@ -63,7 +67,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - Pecahkan kepada projek (cth. Vite + vanilla/React) atau kekalkan satu fail — tanya pengguna.
 - Web Push sebenar (Supabase Edge Function + cron + VAPID) jika notifikasi latar belakang tidak cukup.
 - Eksport laporan PDF/Excel bulanan.
-- Ujian untuk fungsi kira: `monthsToPay`, `upcoming`, `savCalc`, `calc`.
+- Ujian: `node --test tests/calc.test.mjs` (kiraan, migrasi, .ics, gabungan tiga hala).
 
 ## Peraturan
 - Teks UI dalam Bahasa Melayu, ayat biasa (bukan huruf besar semua).

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -170,4 +170,53 @@ test("migrasi v3 → v4: data ASB lama dikekalkan, tarikh stage 2 dibawa ke Tabu
   assert.equal(o.th.by, "2029-12");
   assert.equal(o.th.target, 15000);
   assert.equal(o.savings, 2000);
+});
+
+test("stable: susunan kunci tidak penting (jsonb)", () => {
+  assert.equal(L.stable({ b: 1, a: [{ y: 2, x: 1 }] }), L.stable({ a: [{ x: 1, y: 2 }], b: 1 }));
+});
+
+test("merge3: dua telefon tambah item berbeza — kedua-duanya kekal", () => {
+  const b = { tx: [{ id: "1", amount: 10 }] };
+  const l = { tx: [{ id: "1", amount: 10 }, { id: "A", amount: 5 }] };
+  const r = { tx: [{ id: "1", amount: 10 }, { id: "B", amount: 7 }] };
+  assert.deepEqual(L.merge3(b, l, r).tx.map(x => x.id), ["1", "A", "B"]);
+});
+
+test("merge3: padam di satu telefon, tidak berubah di satu lagi — kekal dipadam", () => {
+  const b = { goals: [{ id: "g1", done: false }, { id: "g2", done: false }] };
+  const l = { goals: [{ id: "g1", done: false }] };
+  assert.deepEqual(L.merge3(b, l, b).goals.map(x => x.id), ["g1"]);
+  assert.deepEqual(L.merge3(b, b, l).goals.map(x => x.id), ["g1"]);
+});
+
+test("merge3: suntingan menang ke atas pemadaman", () => {
+  const b = { debts: [{ id: "d", balance: 100 }] };
+  const l = { debts: [] };
+  const r = { debts: [{ id: "d", balance: 80 }] };
+  assert.deepEqual(L.merge3(b, l, r).debts, [{ id: "d", balance: 80 }]);
+});
+
+test("merge3: medan berbeza dalam item sama digabung; konflik medan sama → peranti ini", () => {
+  const b = { debts: [{ id: "d", balance: 100, rate: 5, name: "A" }] };
+  const l = { debts: [{ id: "d", balance: 90, rate: 5, name: "A" }] };
+  const r = { debts: [{ id: "d", balance: 100, rate: 6, name: "B" }] };
+  assert.deepEqual(L.merge3(b, l, r).debts[0], { id: "d", balance: 90, rate: 6, name: "B" });
+  const r2 = { debts: [{ id: "d", balance: 70, rate: 5, name: "A" }] };
+  assert.equal(L.merge3(b, l, r2).debts[0].balance, 90);
+});
+
+test("merge3: objek paid & tetapan digabung ikut kunci", () => {
+  const b = { paid: {}, asb: { have: 0, s1: 15000 }, th: { have: 0 } };
+  const l = { paid: { "a:2026-11": true }, asb: { have: 500, s1: 15000 }, th: { have: 0 } };
+  const r = { paid: { "b:2026-11": true }, asb: { have: 0, s1: 15000 }, th: { have: 300 } };
+  assert.deepEqual(L.merge3(b, l, r), { paid: { "a:2026-11": true, "b:2026-11": true }, asb: { have: 500, s1: 15000 }, th: { have: 300 } });
+});
+
+test("mergePlan: updatedAt ambil yang terbaru; tiada perubahan → sama", () => {
+  const S = L.normalize({ updatedAt: 5, incomes: [{ id: "i", amount: 1 }] });
+  const R = L.normalize({ updatedAt: 9, incomes: [{ id: "i", amount: 1 }] });
+  const m = L.mergePlan(S, S, R);
+  assert.equal(m.updatedAt, 9);
+  assert.ok(L.sameData(m, S));
 });

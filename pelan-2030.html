@@ -299,6 +299,47 @@ function buildICS(S, today, notifyDays = 3) {
   lines.push("END:VCALENDAR");
   return lines.join("\r\n") + "\r\n";
 }
+// JSON kanonik (kunci disusun) — jsonb Postgres menyusun semula kunci, jadi JSON.stringify biasa tidak boleh dibanding.
+function stable(v) {
+  if (Array.isArray(v)) return "[" + v.map(stable).join(",") + "]";
+  if (v && typeof v === "object") return "{" + Object.keys(v).sort().filter(k => v[k] !== undefined).map(k => JSON.stringify(k) + ":" + stable(v[k])).join(",") + "}";
+  return v === undefined ? "undefined" : JSON.stringify(v);
+}
+const same = (a, b) => stable(a) === stable(b);
+const sameData = (a, b) => same({ ...a, updatedAt: 0 }, { ...b, updatedAt: 0 });
+
+// Gabungan tiga hala: b = versi terakhir disegerak, l = peranti ini, r = awan.
+// Perubahan kedua-dua pihak dikekalkan; senarai bertanda `id` digabung ikut item;
+// jika medan yang sama diubah di kedua-dua pihak, peranti ini menang; suntingan menang ke atas pemadaman.
+function merge3(b, l, r) {
+  const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
+  const idArr = v => Array.isArray(v) && v.every(x => isObj(x) && x.id != null);
+  if (same(l, r)) return l;
+  if (same(l, b)) return r;
+  if (same(r, b)) return l;
+  if (idArr(l) && idArr(r) && (b == null || idArr(b))) {
+    const toMap = a => Object.fromEntries((a || []).map(x => [x.id, x]));
+    const m = merge3(toMap(b), toMap(l), toMap(r));
+    const ids = l.map(x => x.id);
+    for (const x of r) if (!ids.includes(x.id)) ids.push(x.id);
+    return ids.filter(id => m[id] !== undefined).map(id => m[id]);
+  }
+  if (isObj(l) && isObj(r)) {
+    const bo = isObj(b) ? b : {}, out = {};
+    for (const k of new Set([...Object.keys(l), ...Object.keys(r)])) {
+      const v = merge3(bo[k], l[k], r[k]);
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  }
+  return l === undefined ? r : l;
+}
+function mergePlan(base, local, remote) {
+  const m = merge3(base, local, remote);
+  m.updatedAt = Math.max(Number(local.updatedAt) || 0, Number(remote.updatedAt) || 0);
+  return m;
+}
+const planIsEmpty = S => ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx"].every(k => !S[k].length);
 // @logic-end
 </script>
 
@@ -382,36 +423,129 @@ function downloadICS() {
 const CFG = window.PELAN_CONFIG || {};
 let cloudConfigured = !!(CFG.supabaseUrl && CFG.supabaseKey);
 let sb = null, sbUser = null, syncMsg = "", pushT = null;
+let plan = null, members = [], channel = null, syncing = false, syncAgain = false;
+const BASEKEY = KEY + ":base";
 function setSync(msg) {
   syncMsg = msg;
   const el = document.getElementById("syncMsg");
   if (el) el.textContent = msg;
 }
+const jam = () => new Date().toLocaleTimeString("ms-MY", { hour: "2-digit", minute: "2-digit" });
+function getBase(pid) { try { const b = JSON.parse(localStorage.getItem(BASEKEY)); return b && b.planId === pid ? b.data : null; } catch { return null; } }
+function setBase(pid, data) { try { localStorage.setItem(BASEKEY, JSON.stringify({ planId: pid, data })); } catch {} }
 function queuePush() {
   if (!sbUser) return;
   clearTimeout(pushT);
-  pushT = setTimeout(pushCloud, 1200);
+  pushT = setTimeout(syncNow, 1200);
 }
-async function pushCloud() {
-  if (!sbUser) return;
-  setSync("Menyegerak…");
-  const { error } = await sb.from("plans").upsert({ user_id: sbUser.id, data: S, updated_at: new Date(S.updatedAt || Date.now()).toISOString() });
-  setSync(error ? "Gagal segerak: " + error.message : "Disegerak " + new Date().toLocaleTimeString("ms-MY"));
+function adopt(next) { S = normalize(next); save(); render(); syncReminders(false); }
+
+// Pelan milik orang lain (saya dijemput) diutamakan; jika tiada, pelan milik saya.
+async function findPlan() {
+  const { data, error } = await sb.from("shared_plans").select("id, owner_id, owner_email, version").order("created_at");
+  if (error) throw error;
+  return data.find(p => p.owner_id !== sbUser.id) || data.find(p => p.owner_id === sbUser.id) || null;
 }
-async function pullCloud() {
-  if (!sbUser) return;
-  setSync("Menyemak awan…");
-  const { data, error } = await sb.from("plans").select("data").eq("user_id", sbUser.id).maybeSingle();
-  if (error) { setSync("Gagal baca awan: " + error.message); return; }
-  const remote = data && data.data;
-  if (remote && (Number(remote.updatedAt) || 0) > (S.updatedAt || 0)) {
-    S = normalize(remote); save(); render();
-    setSync("Data terkini dimuatkan dari awan " + new Date().toLocaleTimeString("ms-MY"));
-  } else if (!remote || (S.updatedAt || 0) > (Number(remote.updatedAt) || 0)) {
-    await pushCloud();
-  } else {
-    setSync("Sudah terkini " + new Date().toLocaleTimeString("ms-MY"));
+async function attachPlan(p) {
+  if (p) {
+    plan = p;
+    if (!getBase(p.id)) {
+      const { data: row, error } = await sb.from("shared_plans").select("data").eq("id", p.id).single();
+      if (error) throw error;
+      const remote = normalize(row.data);
+      const joining = p.owner_id !== sbUser.id;
+      if (joining || planIsEmpty(S) || (remote.updatedAt || 0) >= (S.updatedAt || 0)) {
+        if (!planIsEmpty(S) && !sameData(S, remote)) {
+          try { localStorage.setItem(KEY + ":sandaran-sebelum-kongsi", JSON.stringify(S)); } catch {}
+          if (joining) toast("Data lama telefon ini disimpan sebagai sandaran");
+        }
+        adopt(remote);
+      }
+      setBase(p.id, remote); // jika data peranti lebih baharu, gabungan seterusnya akan menolaknya
+    }
+    return;
   }
+  // Tiada pelan lagi: cipta daripada data peranti / jadual lama `plans`.
+  let start = S;
+  try {
+    const { data: old } = await sb.from("plans").select("data").eq("user_id", sbUser.id).maybeSingle();
+    if (old && old.data && (Number(old.data.updatedAt) || 0) > (S.updatedAt || 0)) start = normalize(old.data);
+  } catch {}
+  const { data: created, error } = await sb.from("shared_plans")
+    .insert({ data: start, owner_email: (sbUser.email || "").toLowerCase() })
+    .select("id, owner_id, owner_email, version").single();
+  if (error) throw error;
+  plan = created; setBase(created.id, start);
+  if (start !== S) adopt(start);
+}
+async function syncOnce() {
+  const p = await findPlan();
+  if (!plan || !p || p.id !== plan.id) { plan = null; await attachPlan(p); afterAttach(); }
+  for (let i = 0; i < 5; i++) {
+    const { data: row, error } = await sb.from("shared_plans").select("data, version").eq("id", plan.id).maybeSingle();
+    if (error) throw error;
+    if (!row) { plan = null; return syncOnce(); } // akses ditarik balik
+    const remote = normalize(row.data);
+    const merged = normalize(mergePlan(getBase(plan.id), S, remote));
+    if (!sameData(merged, S)) adopt(merged);
+    if (sameData(merged, remote)) { plan.version = row.version; setBase(plan.id, merged); return; }
+    const { data: upd, error: e2 } = await sb.from("shared_plans")
+      .update({ data: merged, version: row.version + 1, updated_at: new Date().toISOString() })
+      .eq("id", plan.id).eq("version", row.version).select("version");
+    if (e2) throw e2;
+    if (upd && upd.length) { plan.version = upd[0].version; setBase(plan.id, merged); return; }
+    // telefon lain simpan pada masa yang sama — baca semula dan gabung lagi
+  }
+  throw new Error("terlalu banyak perubahan serentak");
+}
+async function syncNow() {
+  if (!sbUser || !sb) return;
+  if (syncing) { syncAgain = true; return; }
+  syncing = true; setSync("Menyegerak…");
+  try {
+    do { syncAgain = false; await syncOnce(); } while (syncAgain);
+    setSync("Disegerak " + jam());
+  } catch (e) {
+    const m = String((e && e.message) || e);
+    setSync(/shared_plans|relation|schema cache/i.test(m) ? "Jadual Supabase belum dikemas kini — jalankan supabase/schema.sql" : "Gagal segerak: " + m);
+  } finally { syncing = false; }
+}
+function afterAttach() {
+  if (!plan) return;
+  if (channel) sb.removeChannel(channel);
+  channel = sb.channel("pelan-" + plan.id)
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "shared_plans", filter: "id=eq." + plan.id },
+      ev => { if (ev.new && ev.new.version !== plan.version) syncNow(); })
+    .subscribe();
+  loadMembers();
+}
+async function loadMembers() {
+  if (!plan) return;
+  const { data } = await sb.from("plan_members").select("email").eq("plan_id", plan.id).order("added_at");
+  members = (data || []).map(m => m.email);
+  if (tab === "tetapan") render();
+}
+async function invite(email) {
+  email = email.trim().toLowerCase();
+  if (!plan) return toast("Tunggu segerak selesai dahulu");
+  if (email === (sbUser.email || "").toLowerCase()) return toast("Itu e-mel anda sendiri");
+  const { error } = await sb.from("plan_members").insert({ plan_id: plan.id, email });
+  if (error) return toast(/duplicate/i.test(error.message) ? "E-mel ini sudah dijemput" : "Gagal jemput: " + error.message);
+  toast("Dijemput. Minta " + email + " log masuk di telefonnya.");
+  loadMembers();
+}
+async function removeMember(email) {
+  const { error } = await sb.from("plan_members").delete().eq("plan_id", plan.id).eq("email", email);
+  if (error) return toast("Gagal: " + error.message);
+  loadMembers();
+}
+async function leavePlan() {
+  const me = (sbUser.email || "").toLowerCase();
+  const { error } = await sb.from("plan_members").delete().eq("plan_id", plan.id).eq("email", me);
+  if (error) return toast("Gagal: " + error.message);
+  plan = null; members = []; if (channel) { sb.removeChannel(channel); channel = null; }
+  toast("Anda keluar dari pelan dikongsi. Salinan data kekal dalam telefon ini.");
+  syncNow();
 }
 // Tetapan Supabase: config.js dahulu; jika kosong, ambil dari Vercel (pemboleh ubah persekitaran
 // yang diisi oleh integrasi Supabase ↔ Vercel) melalui /api/supabase-config.
@@ -432,9 +566,13 @@ async function initCloud() {
     const u = session ? session.user : null;
     const changed = (u && u.id) !== (sbUser && sbUser.id);
     sbUser = u;
-    if (changed) { render(); if (u) setTimeout(pullCloud, 0); }
+    if (changed) {
+      plan = null; members = [];
+      if (channel) { sb.removeChannel(channel); channel = null; }
+      render(); if (u) setTimeout(syncNow, 0);
+    }
   });
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && sbUser) pullCloud(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && sbUser) syncNow(); });
 }
 function toast(msg) {
   const el = document.createElement("div"); el.className = "toast"; el.role = "status"; el.textContent = msg;
@@ -843,9 +981,21 @@ function vCloud() {
   else if (!sb) body = `<p class="small muted">Pustaka Supabase tidak dapat dimuatkan (mungkin luar talian). Data tetap disimpan dalam peranti ini.</p>`;
   else if (!sbUser) body = `<p class="small muted">Log masuk untuk simpan data di awan dan guna pada telefon serta komputer.</p>
     <form class="add" data-form="login"><label>E-mel<input name="email" type="email" required autocomplete="email"></label><button class="primary">Hantar pautan log masuk</button></form>`;
-  else body = `<p style="margin:.2rem 0">Log masuk sebagai <b>${esc(sbUser.email)}</b></p>
+  else {
+    const owner = plan && plan.owner_id === sbUser.id;
+    let share;
+    if (!plan) share = `<p class="small muted">Menyediakan pelan…</p>`;
+    else if (owner) share = `<p class="small muted">Pelan ini milik anda. Jemput e-mel lain untuk berkongsi data yang sama — mereka boleh lihat dan ubah semua maklumat.</p>
+      ${members.length ? `<ul class="list">${members.map(m => `<li><div class="grow">${esc(m)}</div><button class="ghost sm" data-act="rmmember" data-email="${esc(m)}" aria-label="Buang ${esc(m)}">✕</button></li>`).join("")}</ul>` : ""}
+      <form class="add" data-form="invite" style="grid-template-columns:1fr auto"><input name="email" type="email" required placeholder="e-mel pasangan / ahli keluarga" aria-label="E-mel untuk dijemput"><button class="primary">Jemput</button></form>`;
+    else share = `<p class="small">Anda berkongsi pelan milik <b>${esc(plan.owner_email)}</b>.</p>
+      ${members.length ? `<p class="small muted">Ahli: ${members.map(esc).join(", ")}</p>` : ""}
+      <button class="sm danger" data-act="leaveplan">Keluar dari pelan ini</button>`;
+    body = `<p style="margin:.2rem 0">Log masuk sebagai <b>${esc(sbUser.email)}</b></p>
     <p class="small muted" id="syncMsg">${esc(syncMsg)}</p>
-    <div class="row"><button data-act="sync">Segerak sekarang</button><button data-act="logout">Log keluar</button></div>`;
+    <div class="row"><button data-act="sync">Segerak sekarang</button><button data-act="logout">Log keluar</button></div>
+    <h3 style="margin-top:16px">Kongsi pelan</h3>${share}`;
+  }
   return `<section class="card"><h2>Penyegerakan awan</h2>${body}</section>`;
 }
 
@@ -888,6 +1038,7 @@ document.addEventListener("submit", e => {
   const f = e.target.closest("form[data-form]"); if (!f) return;
   e.preventDefault();
   const d = Object.fromEntries(new FormData(f));
+  if (f.dataset.form === "invite") { invite(d.email); f.reset(); return; }
   if (f.dataset.form === "login") {
     const btn = f.querySelector("button"); btn.disabled = true;
     sb.auth.signInWithOtp({ email: d.email.trim(), options: { emailRedirectTo: location.origin + location.pathname } })
@@ -964,14 +1115,16 @@ document.addEventListener("click", e => {
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); break;
     }
     case "restore": document.getElementById("restoreFile").click(); break;
-    case "sync": pullCloud(); break;
+    case "sync": syncNow(); break;
+    case "rmmember": if (confirm("Buang " + b.dataset.email + " daripada pelan ini?")) removeMember(b.dataset.email); break;
+    case "leaveplan": if (confirm("Keluar dari pelan dikongsi? Anda akan guna salinan sendiri selepas ini.")) leavePlan(); break;
     case "notifyon": enableNotify(); break;
     case "notifyoff": S.settings.notify = false; commit(); toast("Notifikasi dimatikan"); break;
     case "testnotify": testNotify(); break;
     case "ics": downloadICS(); break;
     case "install": if (installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; render(); }); } break;
-    case "logout": sb.auth.signOut().then(() => { sbUser = null; setSync(""); render(); toast("Telah log keluar. Data kekal dalam peranti ini."); }); break;
-    case "wipe": if (confirm(sbUser ? "Padam SEMUA data, termasuk salinan di awan? Tindakan ini tidak boleh diundur." : "Padam SEMUA data? Tindakan ini tidak boleh diundur.") && confirm("Pasti? Muat turun sandaran dahulu jika perlu.")) { S = normalize(null); commit(); toast("Semua data dipadam"); } break;
+    case "logout": sb.auth.signOut().then(() => { sbUser = null; plan = null; members = []; if (channel) { sb.removeChannel(channel); channel = null; } setSync(""); render(); toast("Telah log keluar. Data kekal dalam peranti ini."); }); break;
+    case "wipe": if (confirm(sbUser ? "Padam SEMUA data, termasuk di awan (semua ahli pelan dikongsi akan terkesan)? Tindakan ini tidak boleh diundur." : "Padam SEMUA data? Tindakan ini tidak boleh diundur.") && confirm("Pasti? Muat turun sandaran dahulu jika perlu.")) { S = normalize(null); commit(); toast("Semua data dipadam"); } break;
   }
 });
 
