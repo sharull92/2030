@@ -111,7 +111,7 @@ svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans
 const DEFAULTS = () => ({
   v: 3,
   updatedAt: 0,
-  settings: { name: "", targetPassive: 3000, emergencyMonths: 6 },
+  settings: { name: "", targetPassive: 3000, emergencyMonths: 6, notify: false, notifyDays: 3 },
   savings: 0,
   incomes: [], commitments: [], debts: [], tx: [], goals: [], ventures: [],
   cards: [], cardTx: [],
@@ -250,6 +250,38 @@ function trend(tx, today, n) {
   }
   return out;
 }
+// Item bayaran berulang (komitmen, hutang aktif, kad dengan baki) untuk kalendar.
+function billItems(S, today) {
+  return [
+    ...S.commitments.map(c => ({ id: c.id, name: c.name, amount: Number(c.amount) || 0, day: Number(c.day) })),
+    ...S.debts.filter(d => (Number(d.balance) || 0) > 0).map(d => ({ id: d.id, name: d.name, amount: Number(d.payment) || 0, day: Number(d.day) })),
+    ...S.cards.map(c => ({ id: c.id, name: "Kad " + c.name, amount: null, day: Number(c.dueDay) }))
+  ].filter(i => i.day >= 1 && i.day <= 31);
+}
+
+// Fail kalendar iCalendar (.ics): acara bulanan berulang hingga 31 Dis 2030 dengan peringatan.
+function buildICS(S, today, notifyDays = 3) {
+  const escT = t => String(t).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  const d8 = d => d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  const stamp = today.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  const n = Math.max(0, Number(notifyDays) || 0);
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Pelan 2030//MS", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:Pelan 2030 — Bayaran"];
+  for (const it of billItems(S, today)) {
+    const last = it.day >= 29; // 29–31 → hari terakhir bulan (tidak terlepas bulan pendek)
+    let start = new Date(today.getFullYear(), today.getMonth(), Math.min(it.day, dim(today.getFullYear(), today.getMonth())));
+    if (last) start = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+    const title = "Bayar " + it.name + (it.amount ? " — RM" + Math.round(it.amount) : "");
+    lines.push("BEGIN:VEVENT", `UID:${it.id}@pelan2030`, `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${d8(start)}`, `DTEND;VALUE=DATE:${d8(end)}`,
+      `RRULE:FREQ=MONTHLY;BYMONTHDAY=${last ? -1 : it.day};UNTIL=20301231`,
+      `SUMMARY:${escT(title)}`, `DESCRIPTION:${escT("Peringatan dari app Pelan 2030" + (last ? " (hari terakhir bulan)" : ""))}`, "TRANSP:TRANSPARENT");
+    if (n > 0) lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${escT(title)}`, `TRIGGER:-P${n - 1}DT15H`, "END:VALARM");
+    lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${escT(title)}`, "TRIGGER:PT9H", "END:VALARM", "END:VEVENT");
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n") + "\r\n";
+}
 // @logic-end
 </script>
 
@@ -281,7 +313,53 @@ function load() {
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { toast("Gagal simpan — storan pelayar penuh atau disekat"); }
 }
-function commit() { S.updatedAt = Date.now(); save(); queuePush(); render(); }
+function commit() { S.updatedAt = Date.now(); save(); queuePush(); render(); syncReminders(); }
+
+/* ---------- notifikasi tarikh bayar ---------- */
+const notifySupported = () => "Notification" in window && "serviceWorker" in navigator;
+// Simpan senarai bayaran akan datang dalam Cache supaya service worker boleh semak di latar belakang.
+async function syncReminders(check = true) {
+  if (!("caches" in window) || !("serviceWorker" in navigator)) return;
+  try {
+    const items = upcoming(S, today(), 45).map(u => ({ key: u.key, name: u.name, amount: u.amount, due: u.due }));
+    const c = await caches.open("pelan2030-data");
+    await c.put("/__peringatan.json", new Response(JSON.stringify({ on: !!S.settings.notify, days: Number(S.settings.notifyDays) || 0, items }), { headers: { "content-type": "application/json" } }));
+    if (check && S.settings.notify && Notification.permission === "granted") {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg.active) reg.active.postMessage({ type: "semak" });
+    }
+  } catch {}
+}
+async function registerPeriodic() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (!reg.periodicSync) return "tiada";
+    const st = await navigator.permissions.query({ name: "periodic-background-sync" });
+    if (st.state !== "granted") return "tiada";
+    await reg.periodicSync.register("peringatan", { minInterval: 12 * 60 * 60 * 1000 });
+    return "aktif";
+  } catch { return "tiada"; }
+}
+async function enableNotify() {
+  if (!notifySupported()) { toast("Pelayar ini tidak menyokong notifikasi"); return; }
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") { toast("Kebenaran ditolak — benarkan notifikasi dalam tetapan pelayar"); render(); return; }
+  S.settings.notify = true; commit();
+  const bg = await registerPeriodic();
+  toast(bg === "aktif" ? "Notifikasi dihidupkan, termasuk semakan latar belakang" : "Notifikasi dihidupkan");
+}
+async function testNotify() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification("Pelan 2030", { body: "Ujian berjaya — anda akan dimaklumkan sebelum tarikh bayar.", icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag: "ujian" });
+  } catch { toast("Tidak dapat papar notifikasi"); }
+}
+function downloadICS() {
+  if (!billItems(S, today()).length) { toast("Tiada komitmen, hutang atau kad dengan tarikh bayar"); return; }
+  const blob = new Blob([buildICS(S, today(), S.settings.notifyDays)], { type: "text/calendar" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "pelan2030-tarikh-bayar.ics";
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 
 /* ---------- penyegerakan awan (Supabase) ---------- */
 const CFG = window.PELAN_CONFIG || {};
@@ -693,6 +771,27 @@ let installEvt = null;
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; if (tab === "tetapan") render(); });
 window.addEventListener("appinstalled", () => { installEvt = null; toast("App dipasang"); render(); });
+function vNotify() {
+  const perm = notifySupported() ? Notification.permission : "tiada";
+  const on = S.settings.notify && perm === "granted";
+  const n = Number(S.settings.notifyDays) || 0;
+  let status;
+  if (perm === "tiada") status = `<p class="small muted">Pelayar ini tidak menyokong notifikasi. Guna kalendar di bawah. Di iPhone, pasang app ke Skrin Utama dahulu (iOS 16.4+).</p>`;
+  else if (perm === "denied") status = `<p class="small neg">Notifikasi disekat. Buka tetapan pelayar/app → Notifikasi → benarkan untuk laman ini.</p>`;
+  else if (on) status = `<p class="small"><span class="pill ok">Hidup</span> Anda dimaklumkan ${n ? n + " hari sebelum" : "pada hari"} tarikh bayar, dan setiap hari jika lewat.</p>
+    <div class="row"><button class="sm" data-act="testnotify">Uji notifikasi</button><button class="sm" data-act="notifyoff">Matikan</button></div>`;
+  else status = `<button class="primary" data-act="notifyon">Hidupkan notifikasi</button>`;
+  return `<section class="card">
+    <h2>Notifikasi tarikh bayar</h2>
+    <label style="max-width:240px">Ingatkan saya<select data-act="notifydays">${[0, 1, 2, 3, 5, 7].map(d => `<option value="${d}" ${d === n ? "selected" : ""}>${d ? d + " hari sebelum" : "Pada hari bayar"}</option>`).join("")}</select></label>
+    <div style="margin-top:10px">${status}</div>
+    <p class="small muted">Notifikasi app disemak setiap kali app dibuka, dan secara berkala di latar belakang jika app dipasang (Chrome Android). Buka app sekurang-kurangnya sebulan sekali.</p>
+    <h3 style="margin-top:14px">Peringatan kalendar (paling pasti)</h3>
+    <p class="small muted">Muat turun dan buka fail ini — setiap komitmen, hutang dan kad ditambah ke kalendar telefon sebagai acara bulanan hingga 2030, dengan peringatan pukul 9 pagi. Muat turun semula jika anda menambah bayaran baru (acara sedia ada dikemas kini, tidak berganda).</p>
+    <button data-act="ics">Tambah ke kalendar (.ics)</button>
+  </section>`;
+}
+
 function vInstall() {
   if (isStandalone()) return "";
   const body = installEvt
@@ -724,6 +823,7 @@ function vTetapan() {
       <button class="primary">Simpan</button>
     </form>
   </section>
+  ${vNotify()}
   ${vInstall()}
   ${vCloud()}
   <section class="card">
@@ -827,6 +927,10 @@ document.addEventListener("click", e => {
     }
     case "restore": document.getElementById("restoreFile").click(); break;
     case "sync": pullCloud(); break;
+    case "notifyon": enableNotify(); break;
+    case "notifyoff": S.settings.notify = false; commit(); toast("Notifikasi dimatikan"); break;
+    case "testnotify": testNotify(); break;
+    case "ics": downloadICS(); break;
     case "install": if (installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; render(); }); } break;
     case "logout": sb.auth.signOut().then(() => { sbUser = null; setSync(""); render(); toast("Telah log keluar. Data kekal dalam peranti ini."); }); break;
     case "wipe": if (confirm(sbUser ? "Padam SEMUA data, termasuk salinan di awan? Tindakan ini tidak boleh diundur." : "Padam SEMUA data? Tindakan ini tidak boleh diundur.") && confirm("Pasti? Muat turun sandaran dahulu jika perlu.")) { S = normalize(null); commit(); toast("Semua data dipadam"); } break;
@@ -846,6 +950,7 @@ document.addEventListener("change", e => {
   const act = el.dataset.act; if (!act) return;
   if (act === "txmonth" && el.value) { txMonth = el.value; render(); }
   if (act === "cardmonth" && el.value) { cardMonth = el.value; render(); }
+  if (act === "notifydays") { S.settings.notifyDays = num(el.value); commit(); }
   if (act === "cardfilter") { cardFilter = el.value; render(); }
   if (act === "goaldone") { const g = S.goals.find(x => x.id === el.dataset.id); if (g) { g.done = el.checked; commit(); } }
   if (act === "step") { const v = S.ventures.find(x => x.id === el.dataset.id); if (v) { v.steps[num(el.dataset.i)].done = el.checked; commit(); } }
@@ -855,6 +960,8 @@ document.addEventListener("change", e => {
 window.addEventListener("storage", e => { if (e.key === KEY) { S = load(); render(); } });
 render();
 initCloud();
+syncReminders();
+if (S.settings.notify) registerPeriodic();
 
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("sw.js").catch(() => {});

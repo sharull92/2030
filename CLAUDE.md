@@ -14,14 +14,14 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 3. **Hutang/Kad** — kad kredit (had, baki, % penggunaan <30% sihat, belanja bulan ikut kategori, bayaran minimum ≈5%/RM50, rekod belanja & bayaran; bayaran kad juga direkod dalam `tx`); komitmen bulanan (tarikh bayar); hutang disusun ikut faedah tertinggi (avalanche) dengan anggaran tarikh selesai.
 4. **Pelan 2030** — matlamat ikut tahun, templat cadangan (TTT → HRD Corp → modul pematuhan → app AI → pasif).
 5. **Niaga** — projek dengan peringkat Idea → Validasi → Bina → Lancar → Skala + senarai langkah proses; templat idea.
-6. **Tetapan** — nama, sasaran pasif, sandaran/pulih JSON, padam semua.
+6. **Tetapan** — nama, sasaran pasif; notifikasi tarikh bayar (N hari sebelum); eksport kalendar .ics; pasang app; penyegerakan awan; sandaran/pulih JSON, padam semua.
 
 ## Model data (satu objek `S`)
 ```js
 {
   v: 3,
   updatedAt: Number,   // ms, untuk penyegerakan awan (v2)
-  settings: { name, targetPassive, emergencyMonths },
+  settings: { name, targetPassive, emergencyMonths, notify, notifyDays },
   savings: Number,
   incomes:     [{ id, name, type: "aktif"|"sampingan"|"pasif", amount }],
   commitments: [{ id, name, amount, day }],
@@ -44,6 +44,8 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - Log masuk melalui pautan e-mel (`signInWithOtp`). Selepas log masuk, app tarik data awan; versi dengan `updatedAt` lebih baharu menang (keseluruhan dokumen). Setiap `commit()` menolak ke awan (debounce 1.2 s). Data ditarik semula apabila tab kembali aktif.
 - Sandaran: `Blob` + `<a download>`; pulih melalui fail JSON.
 - PWA: ikon PNG 192/512 (any + maskable) dalam `icons/` — wajib supaya Chrome Android pasang sebagai app sebenar (WebAPK) tanpa lencana Chrome. Butang "Pasang app" di Tetapan guna `beforeinstallprompt`.
+- Notifikasi: app tulis `upcoming(S, today, 45)` ke Cache `pelan2030-data` → `/__peringatan.json` pada setiap `commit()` dan semasa dibuka; `sw.js` (`semak()`) papar notifikasi bagi item dalam N hari / lewat, sekali sehari setiap item (log `/__dimaklum.json`). Dicetus oleh mesej `semak` dari app dan `periodicsync` (tag `peringatan`, Chrome Android bila dipasang). Tiada server/Web Push.
+- Kalendar: `buildICS()` — VEVENT bulanan (RRULE hingga 20301231, hari 29–31 → BYMONTHDAY=-1) dengan VALARM N hari sebelum 9 pagi + pada hari 9 pagi. UID stabil `<id>@pelan2030` supaya import semula mengemas kini.
 - Hosting: Vercel (statik, tiada build). `vercel.json` set `no-cache` untuk `sw.js` dan `config.js`. Service worker guna rangkaian dahulu untuk fail sama-asal, dan tidak mengganggu permintaan ke Supabase/CDN.
 
 ## Aliran kerja deploy
@@ -58,7 +60,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 
 ## Cadangan kerja seterusnya
 - Pecahkan kepada projek (cth. Vite + vanilla/React) atau kekalkan satu fail — tanya pengguna.
-- Notifikasi tarikh bayar (Notification API / kalendar .ics eksport).
+- Web Push sebenar (Supabase Edge Function + cron + VAPID) jika notifikasi latar belakang tidak cukup.
 - Eksport laporan PDF/Excel bulanan.
 - Ujian untuk fungsi kira: `monthsToPay`, `upcoming`, `savCalc`, `calc`.
 

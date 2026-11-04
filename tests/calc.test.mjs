@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -121,4 +121,23 @@ test("normalize: data v2 dinaik taraf ke v3 tanpa hilang data", () => {
   assert.equal(o.v, 3);
   assert.equal(o.updatedAt, 5);
   assert.equal(o.incomes.length, 1);
+});
+
+test("buildICS: acara bulanan berulang dengan peringatan", () => {
+  const S = L.normalize({
+    commitments: [{ id: "a", name: "Sewa, rumah", amount: 900, day: 5 }, { id: "b", name: "Tiada hari", amount: 1 }],
+    debts: [{ id: "d", name: "PTPTN", balance: 0, payment: 200, day: 10 }],
+    cards: [{ id: "k", name: "Visa", limit: 5000, dueDay: 31 }]
+  });
+  const ics = L.buildICS(S, new Date(2026, 10, 4), 3);
+  assert.ok(ics.startsWith("BEGIN:VCALENDAR\r\n") && ics.endsWith("END:VCALENDAR\r\n"));
+  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 2); // hutang selesai & tanpa hari diabaikan
+  assert.ok(ics.includes("SUMMARY:Bayar Sewa\\, rumah — RM900"));
+  assert.ok(ics.includes("DTSTART;VALUE=DATE:20261105"));
+  assert.ok(ics.includes("RRULE:FREQ=MONTHLY;BYMONTHDAY=5;UNTIL=20301231"));
+  assert.ok(ics.includes("RRULE:FREQ=MONTHLY;BYMONTHDAY=-1;UNTIL=20301231"));
+  assert.ok(ics.includes("DTSTART;VALUE=DATE:20261130"));
+  assert.ok(ics.includes("TRIGGER:-P2DT15H"));
+  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 4);
+  assert.equal((L.buildICS(S, new Date(2026, 10, 4), 0).match(/BEGIN:VALARM/g) || []).length, 2);
 });
