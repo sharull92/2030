@@ -8,7 +8,7 @@ App perancangan kewangan dan kerjaya peribadi hingga 31 Disember 2030. Satu fail
 
 ## Sambung Supabase + Vercel
 1. **Supabase → SQL Editor:** tampal isi `supabase/schema.sql` dan tekan Run.
-2. **Supabase → Project Settings → API Keys:** salin kunci *publishable* (atau *anon public*) ke `supabaseKey` dalam `config.js`. Jangan guna kunci *secret*/*service_role*.
+2. **Sambung kunci:** Vercel → projek → **Integrations** → Supabase → sambung ke projek Supabase anda, kemudian **Redeploy**. App membaca URL + kunci awam melalui `/api/supabase-config`. (Cara lain: salin kunci *publishable*/*anon* ke `config.js`. Jangan guna kunci *secret*/*service_role*.)
 3. **Vercel → Add New → Project:** import repo `2030`, Framework Preset **Other**, tiada build command, tekan Deploy.
 4. **Supabase → Authentication → URL Configuration:** letak URL Vercel (cth. `https://2030-xxx.vercel.app`) sebagai *Site URL*, dan tambah `https://2030-xxx.vercel.app/**` dalam *Redirect URLs*.
 5. Buka app → **Tetapan → Penyegerakan awan** → masukkan e-mel → klik pautan dalam e-mel.

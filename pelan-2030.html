@@ -380,7 +380,7 @@ function downloadICS() {
 
 /* ---------- penyegerakan awan (Supabase) ---------- */
 const CFG = window.PELAN_CONFIG || {};
-const cloudConfigured = !!(CFG.supabaseUrl && CFG.supabaseKey);
+let cloudConfigured = !!(CFG.supabaseUrl && CFG.supabaseKey);
 let sb = null, sbUser = null, syncMsg = "", pushT = null;
 function setSync(msg) {
   syncMsg = msg;
@@ -413,8 +413,20 @@ async function pullCloud() {
     setSync("Sudah terkini " + new Date().toLocaleTimeString("ms-MY"));
   }
 }
-function initCloud() {
-  if (!cloudConfigured || !window.supabase) return;
+// Tetapan Supabase: config.js dahulu; jika kosong, ambil dari Vercel (pemboleh ubah persekitaran
+// yang diisi oleh integrasi Supabase ↔ Vercel) melalui /api/supabase-config.
+async function loadCloudConfig() {
+  if (cloudConfigured || !location.protocol.startsWith("http")) return;
+  try {
+    const r = await fetch("/api/supabase-config", { cache: "no-store" });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (j.supabaseUrl && j.supabaseKey) { CFG.supabaseUrl = j.supabaseUrl; CFG.supabaseKey = j.supabaseKey; cloudConfigured = true; }
+  } catch {}
+}
+async function initCloud() {
+  await loadCloudConfig();
+  if (!cloudConfigured || !window.supabase) { if (tab === "tetapan") render(); return; }
   sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey);
   sb.auth.onAuthStateChange((_ev, session) => {
     const u = session ? session.user : null;
@@ -827,7 +839,7 @@ function vInstall() {
 
 function vCloud() {
   let body;
-  if (!cloudConfigured) body = `<p class="small muted">Belum disediakan. Isi URL dan kunci Supabase dalam fail <code>config.js</code>.</p>`;
+  if (!cloudConfigured) body = `<p class="small muted">Belum disambung. Sambungkan Supabase ke Vercel (Vercel → Integrations → Supabase), atau isi URL dan kunci dalam fail <code>config.js</code>.</p>`;
   else if (!sb) body = `<p class="small muted">Pustaka Supabase tidak dapat dimuatkan (mungkin luar talian). Data tetap disimpan dalam peranti ini.</p>`;
   else if (!sbUser) body = `<p class="small muted">Log masuk untuk simpan data di awan dan guna pada telefon serta komputer.</p>
     <form class="add" data-form="login"><label>E-mel<input name="email" type="email" required autocomplete="email"></label><button class="primary">Hantar pautan log masuk</button></form>`;
