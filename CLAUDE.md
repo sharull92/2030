@@ -74,6 +74,12 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - App (Tetapan → "Auto catat duit masuk"): `makeEmailToken` (48 hex, jadual `plan_tokens`), `copyEmailScript` (fetch fail .gs, isi `__URL__`/`__KEY__`/`__TOKEN__`), `revokeEmailToken`. `importIncoming()` selepas segerak & Realtime INSERT `incoming` → tx Masuk id tetap `inc-<id>` (tiada berganda antara telefon), kategori "Gaji" jika nota ada gaji/salary, lain "Duit masuk"; tanda `imported`.
 - Supabase: `plan_tokens`, `incoming` (unik `plan_id,msg_id`), fungsi `add_incoming`/`check_token` (security definer). Token hanya boleh menambah, tidak membaca.
 
+## Auto catat dari notifikasi telefon (Android)
+- MacroDroid (Notifikasi Diterima → Permintaan HTTP POST text/plain) → `api/notif.js` (fungsi Vercel; hanya terima URL `*.supabase.co`; `?t=token&u=url&k=kunci awam`) → RPC `add_notif(token, text, app)` → jadual `notif_inbox` (teks mentah; pendua dalam minit sama ditolak).
+- App: `importNotif()` (selepas segerak & Realtime INSERT) → `kesanTransaksi()` (logik tulen: masuk/keluar, jumlah, kedai, teka kategori `N_KATEGORI`; abaikan OTP/promo/reload/baki/gagal/akaun sendiri) → tx id `ntf-<id>`; `isDupAuto()` elak pendua dengan e-mel (`inc-`) — jenis+jumlah+tarikh sama dari sumber lain. Tanda `processed` + `result` (dicatat/pendua/abaikan); log 8 terkini di Tetapan; "Hantar ujian" hantar teks bukan transaksi.
+- Token sama dengan auto e-mel (`plan_tokens`). iPhone tidak benarkan baca notifikasi app lain.
+- Ujian: `tests/notif.test.mjs`, `tests/api-notif.test.mjs`.
+
 ## Format nombor
 - Wang: `RM()` sentiasa 2 tempat perpuluhan (RM 4,782.00), dibundar ke sen. Semua input wang `step="0.01" inputmode="decimal"`.
 - Emas: `fmtG()` hingga 3 tempat perpuluhan (1.025 g); input gram `step="0.001"`.
@@ -86,7 +92,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 ## Cadangan kerja seterusnya
 - Pecahkan kepada projek (cth. Vite + vanilla/React) atau kekalkan satu fail — tanya pengguna.
 - Web Push sebenar (Supabase Edge Function + cron + VAPID) jika notifikasi latar belakang tidak cukup.
-- Ujian: `node --test tests/calc.test.mjs tests/emel.test.mjs`.
+- Ujian: `node --test tests/*.test.mjs`.
 
 ## Peraturan
 - Teks UI dalam Bahasa Melayu, ayat biasa (bukan huruf besar semua).

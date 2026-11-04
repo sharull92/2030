@@ -226,3 +226,54 @@ do $$ begin
     alter publication supabase_realtime add table public.incoming;
   end if;
 end $$;
+
+-- =====================================================================
+-- AUTO CATAT DARI NOTIFIKASI TELEFON (Android: MacroDroid → /api/notif → add_notif)
+-- Teks notifikasi mentah disimpan; app yang mengesan masuk/keluar & jumlah.
+-- Guna token yang sama dengan auto e-mel (plan_tokens). Token hanya boleh menambah.
+-- =====================================================================
+create table if not exists public.notif_inbox (
+  id         bigserial primary key,
+  plan_id    uuid not null references public.shared_plans (id) on delete cascade,
+  app        text,
+  body       text not null,
+  dedupe     text not null,
+  processed  boolean not null default false,
+  result     text,
+  created_at timestamptz not null default now(),
+  unique (plan_id, dedupe)
+);
+create index if not exists notif_inbox_pending_idx on public.notif_inbox (plan_id) where not processed;
+alter table public.notif_inbox enable row level security;
+drop policy if exists "ni_select" on public.notif_inbox;
+drop policy if exists "ni_update" on public.notif_inbox;
+create policy "ni_select" on public.notif_inbox for select to authenticated using (public.can_access_plan(plan_id));
+create policy "ni_update" on public.notif_inbox for update to authenticated using (public.can_access_plan(plan_id)) with check (public.can_access_plan(plan_id));
+revoke all on public.notif_inbox from anon, authenticated;
+grant select on public.notif_inbox to authenticated;
+grant update (processed, result) on public.notif_inbox to authenticated;
+
+create or replace function public.add_notif(p_token text, p_text text, p_app text default null)
+returns text language plpgsql security definer set search_path = '' as $$
+declare pid uuid; t text := left(trim(coalesce(p_text, '')), 1000);
+begin
+  select plan_id into pid from public.plan_tokens where token = p_token;
+  if pid is null then raise exception 'token tidak sah'; end if;
+  if t = '' then raise exception 'teks kosong'; end if;
+  if (select count(*) from public.notif_inbox where plan_id = pid and created_at > now() - interval '1 day') > 1000 then
+    raise exception 'terlalu banyak notifikasi hari ini';
+  end if;
+  -- Notifikasi sama dihantar semula dalam minit yang sama = pendua.
+  insert into public.notif_inbox (plan_id, app, body, dedupe)
+  values (pid, left(p_app, 80), t, md5(coalesce(p_app, '') || '|' || t || '|' || to_char(now(), 'YYYY-MM-DD HH24:MI')))
+  on conflict (plan_id, dedupe) do nothing;
+  return 'ok';
+end $$;
+revoke all on function public.add_notif(text, text, text) from public;
+grant execute on function public.add_notif(text, text, text) to anon, authenticated;
+
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'notif_inbox') then
+    alter publication supabase_realtime add table public.notif_inbox;
+  end if;
+end $$;

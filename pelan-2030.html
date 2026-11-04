@@ -549,6 +549,46 @@ function budgetStatus(S, m) {
   return { rows, unbudgeted, budget, spent: spentB, unbudgetedTotal: sum(unbudgeted, u => u.spent), pct: budget ? spentB / budget * 100 : 0 };
 }
 
+// ---------- pengesan notifikasi telefon (bank / e-wallet) ----------
+// Pulangkan { type: "in"|"out", amount, merchant, cat } atau null jika bukan transaksi / tidak pasti.
+const N_ABAI = /(\bOTP\b|\bTAC\b|kod pengesahan|verification code|promo|cashback|dapatkan|jom |win |menang|offer|tawaran|voucher|baucar|reload|top[ -]?up|tambah nilai|own account|akaun sendiri|antara akaun|balance is|baki anda ialah|statement|penyata|reminder|peringatan|due date|tarikh akhir|failed|gagal|unsuccessful|tidak berjaya|declined|ditolak|pending|log ?in|log masuk|new device|peranti baru)/i;
+const N_MASUK = /(you(?:'ve| have)? received|received (?:a |an )?(?:payment|transfer|fund|duitnow|money)|money in|duit masuk|wang masuk|has been credited|been credited|credited (?:to|into)|incoming (?:fund|transfer|payment)|transferred to you|sent you|diterima|dikreditkan|anda terima|terima(?:an)? (?:wang|duit|pindahan|bayaran)|refund(?:ed)?|bayaran balik)/i;
+const N_KELUAR = /(you(?:'ve| have)? (?:spent|paid|sent|transferred)|spent|paid to|payment (?:of|to|made|successful)|successful payment|pembayaran (?:berjaya|sebanyak|kepada)|bayaran (?:berjaya|kepada)|purchase|pembelian|transaction of|transaksi (?:sebanyak|di)|charged|debited|didebitkan|duitnow (?:transfer|qr)? ?(?:of|sebanyak)? ?RM[\d.,\s]+ to|transfer(?:red)? (?:of )?RM[\d.,\s]+ to|withdrawal|pengeluaran|money out|duit keluar|wang keluar)/i;
+const N_KATEGORI = [
+  [/petronas|shell|petron|\bbhp\b|caltex|esso|minyak|fuel/i, "Minyak"],
+  [/mydin|lotus|aeon|giant|speedmart|99 ?speed|tesco|econsave|jaya grocer|village grocer|nsk|hero market|cold storage|kk super|7-?eleven|family ?mart|pasar|grocer/i, "Barang dapur"],
+  [/mcd|mcdonald|kfc|marry ?brown|starbucks|zus|tealive|chagee|secret recipe|domino|pizza|subway|mamak|restoran|restaurant|nasi|kopi|cafe|kedai makan|foodpanda|grab ?food|shopee ?food|food/i, "Makan"],
+  [/\btnb\b|tenaga|syabas|air selangor|ranhill|indah water|unifi|time ?internet|maxis|celcom|digi|u ?mobile|yes ?4g|astro|\btm\b|bil\b|bill/i, "Bil"],
+  [/grab(?! ?food)|\bgocar\b|airasia ride|maxim|touch.?n.?go toll|plus|tol|parking|parkir|rapid ?kl|ktm|lrt|mrt|myrapid/i, "Pengangkutan"],
+  [/shopee|lazada|tiktok shop|temu|zalora|amazon/i, "Belian dalam talian"],
+  [/klinik|clinic|farmasi|pharmacy|guardian|watsons|caring|hospital/i, "Kesihatan"]
+];
+function kesanTransaksi(teks) {
+  const t = String(teks || "").replace(/\s+/g, " ").trim();
+  if (!t || N_ABAI.test(t)) return null;
+  const masuk = N_MASUK.test(t), keluar = N_KELUAR.test(t);
+  if (masuk === keluar) return null;                       // tiada / bercanggah → tidak pasti
+  const re = /(?:RM|MYR)\s?([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/gi;
+  let m, amt = null;
+  while ((m = re.exec(t))) {
+    const sebelum = t.slice(Math.max(0, m.index - 25), m.index);
+    if (/(balance|baki|available|limit|had)[^.]{0,12}$/i.test(sebelum)) continue;
+    amt = parseFloat(m[1].replace(/,/g, "")); break;
+  }
+  if (!(amt > 0)) return null;
+  const mm = t.match(masuk ? /(?:from|daripada|dari)\s+([A-Za-z0-9&@'._\- ]{2,40}?)(?=[.,!]|\s+(?:on|pada|via|ref|to|ke)\b|$)/i
+                           : /(?:\bat|\bto|kepada|\bdi)\s+([A-Za-z0-9&@'._\- ]{2,40}?)(?=[.,!]|\s+(?:on|pada|via|ref|using|with|is|was|has)\b|$)/i);
+  const merchant = mm ? mm[1].trim() : "";
+  let cat = masuk ? (/gaji|salary|payroll|upah|elaun/i.test(t) ? "Gaji" : "Duit masuk") : "Lain-lain";
+  if (!masuk) for (const [r, c] of N_KATEGORI) if (r.test(merchant || t)) { cat = c; break; }
+  return { type: masuk ? "in" : "out", amount: Math.round(amt * 100) / 100, merchant, cat };
+}
+// Transaksi auto (e-mel / notifikasi) dengan jenis, jumlah & tarikh sama dari sumber LAIN dianggap pendua.
+function isDupAuto(S, type, amount, date, myPrefix) {
+  return S.tx.some(t => (String(t.id).startsWith("inc-") || String(t.id).startsWith("ntf-")) && !String(t.id).startsWith(myPrefix)
+    && t.type === type && t.date === date && Math.abs((Number(t.amount) || 0) - amount) < 0.005);
+}
+
 // ---------- tong sampah & pulih ----------
 const LISTS = ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits", "budgets"];
 const LIST_LABEL = { incomes: "Pendapatan", commitments: "Komitmen", debts: "Hutang", tx: "Transaksi", goals: "Matlamat", ventures: "Projek niaga", cards: "Kad kredit", cardTx: "Rekod kad", deposits: "Rekod simpanan", budgets: "Bajet", steps: "Langkah projek" };
@@ -861,6 +901,7 @@ async function syncNow() {
     do { syncAgain = false; await syncOnce(); } while (syncAgain);
     setSync("Disegerak " + jam());
     setTimeout(importIncoming, 0);
+    setTimeout(importNotif, 0);
   } catch (e) {
     const m = String((e && e.message) || e);
     setSync(/shared_plans|relation|schema cache/i.test(m) ? "Jadual Supabase belum dikemas kini — jalankan supabase/schema.sql" : "Gagal segerak: " + m);
@@ -873,9 +914,11 @@ function afterAttach() {
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "shared_plans", filter: "id=eq." + plan.id },
       ev => { if (ev.new && ev.new.version !== plan.version) syncNow(); })
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "incoming", filter: "plan_id=eq." + plan.id }, () => importIncoming())
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "notif_inbox", filter: "plan_id=eq." + plan.id }, () => importNotif())
     .subscribe();
   loadMembers();
   loadEmailToken();
+  loadNotifLog();
 }
 
 /* ---------- auto catat duit masuk dari e-mel ---------- */
@@ -890,6 +933,7 @@ async function importIncoming() {
     for (const r of data) {
       const id = "inc-" + r.id;   // id tetap: telefon lain yang import serentak tidak menggandakan
       if (S.tx.some(t => t.id === id) || S.trash[id]) continue;
+      if (isDupAuto(S, "in", Number(r.amount) || 0, r.tx_date, "inc-")) continue;   // sudah dicatat dari notifikasi
       const desc = String(r.description || "").trim();
       S.tx.push({ id, date: r.tx_date, type: "in", cat: /gaji|salary|payroll|upah|elaun/i.test(desc) ? "Gaji" : "Duit masuk", amount: Number(r.amount) || 0, note: (desc ? desc.slice(0, 80) + " · " : "") + "auto e-mel" });
       n++; total += Number(r.amount) || 0;
@@ -897,6 +941,67 @@ async function importIncoming() {
     await sb.from("incoming").update({ imported: true }).in("id", data.map(r => r.id));
     if (n) { commit(); toast(`${n} duit masuk dicatat automatik dari e-mel (${RM(total)})`); }
   } catch {} finally { importing = false; }
+}
+let importingN = false, notifLog = [];
+async function importNotif() {
+  if (!sb || !sbUser || !plan || importingN) return;
+  importingN = true;
+  try {
+    const { data, error } = await sb.from("notif_inbox").select("id, app, body, created_at").eq("plan_id", plan.id).eq("processed", false).order("id").limit(100);
+    if (error || !data || !data.length) return;
+    const res = {}; let nin = 0, nout = 0, tin = 0, tout = 0;
+    for (const r of data) {
+      const id = "ntf-" + r.id, date = ymd(new Date(r.created_at));
+      const k = kesanTransaksi((r.app ? r.app + ": " : "") + r.body);
+      if (!k) { res[r.id] = "abaikan"; continue; }
+      if (S.tx.some(t => t.id === id) || S.trash[id]) { res[r.id] = "dicatat"; continue; }
+      if (isDupAuto(S, k.type, k.amount, date, "ntf-")) { res[r.id] = "pendua"; continue; }
+      S.tx.push({ id, date, type: k.type, cat: k.cat, amount: k.amount, note: (k.merchant ? k.merchant + " · " : "") + "auto notifikasi" + (r.app ? " (" + String(r.app).slice(0, 30) + ")" : "") });
+      res[r.id] = "dicatat";
+      if (k.type === "in") { nin++; tin += k.amount; } else { nout++; tout += k.amount; }
+    }
+    for (const result of new Set(Object.values(res)))
+      await sb.from("notif_inbox").update({ processed: true, result }).in("id", Object.keys(res).filter(i => res[i] === result).map(Number));
+    if (nin || nout) { commit(); toast("Dari notifikasi: " + [nin ? `${nin} masuk ${RM(tin)}` : "", nout ? `${nout} keluar ${RM(tout)}` : ""].filter(Boolean).join(" · ")); }
+    loadNotifLog();
+  } catch {} finally { importingN = false; }
+}
+async function loadNotifLog() {
+  if (!plan) return;
+  try { const { data } = await sb.from("notif_inbox").select("id, app, body, result, created_at").eq("plan_id", plan.id).order("id", { ascending: false }).limit(8); notifLog = data || []; } catch { notifLog = []; }
+  if (tab === "tetapan") render();
+}
+const notifURL = () => emailTok ? `${location.origin}/api/notif?t=${emailTok.token}&u=${encodeURIComponent(CFG.supabaseUrl)}&k=${encodeURIComponent(CFG.supabaseKey)}` : "";
+async function copyText(txt, okMsg) {
+  try { await navigator.clipboard.writeText(txt); toast(okMsg); }
+  catch { const ta = document.getElementById("notifUrlBox"); if (ta) { ta.hidden = false; ta.value = txt; ta.select(); } toast("Pilih semua teks dalam kotak dan salin"); }
+}
+async function testNotif() {
+  try {
+    const r = await fetch(notifURL(), { method: "POST", headers: { "Content-Type": "text/plain" }, body: "UJIAN SAMBUNGAN Pelan 2030 — bukan transaksi" });
+    toast(r.ok ? "Ujian dihantar ✓ — semak log di bawah" : "Gagal: " + (await r.text()).slice(0, 120));
+    setTimeout(importNotif, 1200);
+  } catch { toast("Gagal — semak internet"); }
+}
+function vNotifAuto() {
+  if (!sbUser || !plan) return "";
+  const head = `<h2>Auto catat dari notifikasi telefon</h2><p class="small muted">Notifikasi app bank &amp; e-wallet (MAE, CIMB OCTO, TNG eWallet, Boost…) dicatat sebagai duit <b>masuk</b> atau <b>keluar</b> secara automatik, dengan kategori diteka (Minyak, Makan, Barang dapur, Bil…). Untuk <b>Android</b>, menggunakan app percuma <b>MacroDroid</b>.</p>`;
+  if (!emailTokLoaded) return `<section class="card">${head}<p class="small muted">Memuatkan…</p></section>`;
+  if (!emailTok) return `<section class="card">${head}<button class="primary" data-act="emailtok">Mula sediakan</button></section>`;
+  const RES = { dicatat: ["ok", "Dicatat"], pendua: ["warn", "Pendua"], abaikan: ["", "Diabaikan"] };
+  return `<section class="card">${head}
+    <ol class="small" style="padding-left:18px;margin:.4rem 0">
+      <li>Pasang <b>MacroDroid</b> dari Play Store.</li>
+      <li><b>Tambah Macro</b> → Pencetus: <b>Notifikasi</b> → <b>Notifikasi Diterima</b> → pilih app bank &amp; e-wallet anda → kandungan: <i>Apa-apa</i>.</li>
+      <li>Tindakan: <b>Web / Sambungan</b> → <b>Permintaan HTTP</b> → kaedah <b>POST</b> → URL: tekan <b>Salin alamat</b> di bawah dan tampal.</li>
+      <li>Badan (Body): jenis <b>text/plain</b> → masukkan teks ajaib <b>Tajuk notifikasi</b> dan <b>Teks notifikasi</b> (<code>[not_title] [notification]</code>).</li>
+      <li>Simpan. Benarkan <b>Akses notifikasi</b> untuk MacroDroid dan matikan <b>Pengoptimuman bateri</b> untuknya.</li>
+    </ol>
+    <div class="row"><button class="primary" data-act="notifcopy">Salin alamat</button><button data-act="notiftest">Hantar ujian</button></div>
+    <textarea id="notifUrlBox" hidden readonly rows="3" style="margin-top:8px;font:12px monospace"></textarea>
+    <p class="small muted">Alamat ini mengandungi kod sambungan anda — jangan kongsi. Transaksi yang sama dari e-mel &amp; notifikasi hanya dicatat sekali. iPhone tidak membenarkan app lain membaca notifikasi; guna auto e-mel.</p>
+    ${notifLog.length ? `<h3 style="margin-top:12px">Log notifikasi terkini</h3><ul class="list">${notifLog.map(n => { const rr = RES[n.result] || ["", "Menunggu"]; return `<li style="padding:6px 0;align-items:flex-start"><div class="grow"><div class="small">${esc(String(n.body).slice(0, 110))}</div><div class="small muted">${n.app ? esc(n.app) + " · " : ""}${new Date(n.created_at).toLocaleString("ms-MY", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div></div><span class="pill ${rr[0]}">${rr[1]}</span></li>`; }).join("")}</ul>` : ""}
+  </section>`;
 }
 async function loadEmailToken() {
   if (!plan) return;
@@ -1704,6 +1809,7 @@ function vTetapan() {
   return `
   ${vCloud()}
   ${vEmailAuto()}
+  ${vNotifAuto()}
   <section class="card">
     <h2>Profil</h2>
     <form class="add" data-form="settings">
@@ -1961,6 +2067,8 @@ document.addEventListener("click", e => {
     case "pdf": exportPDF(); break;
     case "emailtok": makeEmailToken(); break;
     case "emailcopy": copyEmailScript(); break;
+    case "notifcopy": copyText(notifURL(), "Alamat disalin ✓ — tampal dalam MacroDroid (Permintaan HTTP → URL)"); break;
+    case "notiftest": testNotif(); break;
     case "emailrevoke": if (confirm("Batalkan kod? Skrip Gmail yang sedia ada akan berhenti mencatat.")) revokeEmailToken(); break;
     case "quick": openQuick("out"); break;
     case "xlsx": exportExcel(false); break;
