@@ -286,8 +286,8 @@ function monthOut(S, today) {
   return { spent, pending, total: spent + pending, received, byCat, cardSpend: sum(cardSpend, t => t.amount) };
 }
 
-// Ringkasan setahun (year = 0 → semua tahun). Pendapatan: bagi setiap bulan yang ada rekod (dan bulan semasa), guna jumlah
-// "Masuk" sebenar; jika tiada, guna pendapatan bulanan dirancang.
+// Ringkasan setahun (year = 0 → semua tahun). Pendapatan = transaksi "Masuk" sebenar sahaja.
+// Jika bulan semasa belum ada "Masuk", pendapatan dirancang ditunjuk sebagai "dijangka" (tidak dicampur).
 function yearSummary(S, year, today) {
   const Y = String(year), curYM = ym(today);
   const all = !Number(year);
@@ -299,16 +299,13 @@ function yearSummary(S, year, today) {
   for (const t of [...txOut, ...cardSpend]) { const c = String(t.cat || "Lain-lain").trim() || "Lain-lain"; byCat[c] = (byCat[c] || 0) + (Number(t.amount) || 0); }
   const months = new Set([...txOut, ...cardSpend, ...txIn].map(t => String(t.date).slice(0, 7)));
   const incCurrent = all || Number(year) === today.getFullYear();
-  if (incCurrent) months.add(curYM);
-  const planned = sum(S.incomes, i => i.amount);
-  let income = 0;
-  for (const m of months) {
-    const rec = sum(txIn.filter(t => String(t.date).slice(0, 7) === m), t => t.amount);
-    income += rec > 0 ? rec : planned;
-  }
+  const income = sum(txIn, t => t.amount);
+  const receivedNow = sum(S.tx.filter(t => t.type === "in" && String(t.date).slice(0, 7) === curYM), t => t.amount);
+  const expected = incCurrent && receivedNow === 0 ? sum(S.incomes, i => i.amount) : 0;
   const spent = sum(txOut, t => t.amount) + sum(cardSpend, t => t.amount);
   const pending = incCurrent ? monthOut(S, today).pending : 0;
-  return { income, spent, pending, balance: income - spent - pending, byCat, months: months.size, received: sum(txIn, t => t.amount) };
+  const balance = income - spent;
+  return { income, expected, spent, pending, balance, projected: balance + expected - pending, byCat, months: months.size };
 }
 
 // Aliran sebulan, sama definisi dengan ringkasan: masuk = transaksi Masuk; keluar = transaksi Keluar
@@ -724,9 +721,9 @@ function vRingkasan() {
       <select data-act="sumyear" aria-label="Pilih tahun" style="width:auto"><option value="0" ${sumYear ? "" : "selected"}>Semua tahun</option>${years.map(y => `<option value="${y}" ${y === sumYear ? "selected" : ""}>Tahun ${y}</option>`).join("")}</select></div>
     <div class="row between small muted" style="margin:-2px 0 8px"><span>${ys.months} bulan direkod</span>${dsrPill(c)}</div>
     <div class="grid3">
-      <div class="stat"><span>Pendapatan</span><b>${RM(ys.income)}</b></div>
+      <div class="stat"><span>Pendapatan diterima</span><b>${RM(ys.income)}</b>${ys.expected ? `<span>+ ${RM(ys.expected)} dijangka bulan ini (belum direkod)</span>` : ""}</div>
       <div class="stat"><span>Duit keluar</span><b class="${ys.spent ? "neg" : ""}">${RM(ys.spent)}</b>${ys.pending ? `<span>+ ${RM(ys.pending)} komitmen bulan ini belum bayar</span>` : ""}</div>
-      <div class="stat"><span>${ys.pending ? "Baki dijangka" : "Baki"}</span><b class="${ys.balance >= 0 ? "pos" : "neg"}">${RM(ys.balance)}</b></div>
+      <div class="stat"><span>Baki</span><b class="${ys.balance >= 0 ? "pos" : "neg"}">${RM(ys.balance)}</b>${ys.expected || ys.pending ? `<span>Dijangka hujung bulan: ${RM(ys.projected)}</span>` : ""}</div>
     </div>
     ${Object.keys(ys.byCat).length ? `<h3 style="margin-top:14px">Duit keluar ikut kategori</h3>
     <ul class="list">${Object.entries(ys.byCat).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<li style="padding:6px 0"><div class="grow">${esc(n)}<div class="bar" style="margin-top:4px;height:6px"><i style="width:${(v / ys.spent * 100).toFixed(1)}%;background:var(--red)"></i></div></div><span class="num">${RM(v)}</span></li>`).join("")}</ul>` : `<p class="empty">Tiada duit keluar direkod${sumYear ? " untuk " + sumYear : ""}.</p>`}

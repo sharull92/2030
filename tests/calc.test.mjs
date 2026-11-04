@@ -247,34 +247,38 @@ test("monthOut: semua duit keluar bulan ini tanpa kira dua kali", () => {
   assert.deepEqual(m.byCat, { "U-MOBILE": 72, Komitmen: 900, Minyak: 60 });
 });
 
-test("yearSummary: tapis tahun; pendapatan ikut bulan direkod", () => {
+test("yearSummary: pendapatan = Masuk sebenar sahaja; dijangka ditunjuk berasingan", () => {
+  // Senario sebenar: gaji Okt direkod sebagai Masuk; Nov belum terima gaji.
   const S = L.normalize({
     incomes: [{ id: "g", amount: 4782 }],
     commitments: [{ id: "c", amount: 900, day: 28 }],
     tx: [
-      { date: "2026-10-03", type: "out", cat: "Minyak", amount: 150 },
+      { date: "2026-10-27", type: "in", cat: "Gaji", amount: 4782 },
+      { date: "2026-10-27", type: "out", cat: "RUMAH", amount: 1950 },
+      { date: "2026-10-27", type: "out", cat: "WIFE", amount: 850 },
       { date: "2026-11-01", type: "out", cat: "U-MOBILE", amount: 72 },
-      { date: "2026-10-25", type: "in", cat: "Gaji", amount: 5000 },
       { date: "2026-11-06", type: "out", cat: "Kad kredit", amount: 500 },
       { date: "2027-01-05", type: "out", cat: "Makan", amount: 30 }
     ],
     cardTx: [{ cardId: "k", date: "2026-09-10", type: "belanja", amount: 60, cat: "Minyak" }]
   });
-  const y = L.yearSummary(S, 2026, new Date(2026, 10, 10));
-  assert.equal(y.months, 3);                    // Sep, Okt, Nov
-  assert.equal(y.income, 4782 + 5000 + 4782);  // Okt guna jumlah sebenar diterima
-  assert.equal(y.spent, 150 + 72 + 60);         // bayaran bil kad tidak dikira
+  const t = new Date(2026, 10, 10);
+  const y = L.yearSummary(S, 2026, t);
+  assert.equal(y.income, 4782);                    // TIDAK berganda
+  assert.equal(y.expected, 4782);                  // gaji Nov dijangka, belum diterima
+  assert.equal(y.spent, 1950 + 850 + 72 + 60);     // bayaran bil kad tidak dikira
+  assert.equal(y.balance, 4782 - 2932);
   assert.equal(y.pending, 900);
-  assert.deepEqual(y.byCat, { Minyak: 210, "U-MOBILE": 72 });
-  const y27 = L.yearSummary(S, 2027, new Date(2026, 10, 10));
-  assert.equal(y27.spent, 30);
-  assert.equal(y27.income, 4782);
-  assert.equal(y27.pending, 0);
-  const sem = L.yearSummary(S, 0, new Date(2026, 10, 10));   // semua tahun
-  assert.equal(sem.months, 4);
-  assert.equal(sem.spent, 150 + 72 + 60 + 30);
-  assert.equal(sem.income, 4782 + 5000 + 4782 + 4782);
-  assert.equal(sem.pending, 900);
+  assert.equal(y.projected, 4782 - 2932 + 4782 - 900);
+  assert.equal(y.months, 3);
+  // selepas gaji Nov direkod → tiada lagi "dijangka"
+  S.tx.push({ date: "2026-11-25", type: "in", cat: "Gaji", amount: 4782 });
+  const y2 = L.yearSummary(S, 2026, t);
+  assert.equal(y2.income, 9564); assert.equal(y2.expected, 0);
+  const y27 = L.yearSummary(S, 2027, t);
+  assert.equal(y27.income, 0); assert.equal(y27.expected, 0); assert.equal(y27.spent, 30); assert.equal(y27.pending, 0);
+  const sem = L.yearSummary(S, 0, t);
+  assert.equal(sem.spent, 2932 + 30); assert.equal(sem.income, 9564);
 });
 
 test("trend: tapis tahun dan bulan terakhir; keluar termasuk belanja kad", () => {
