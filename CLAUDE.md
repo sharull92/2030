@@ -41,6 +41,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - Awan (pilihan): Supabase. `config.js` mengandungi `supabaseUrl` + kunci publishable/anon (selamat, dilindungi RLS — jangan sekali-kali letak kunci secret/service_role). Jadual `public.plans (user_id, data jsonb, updated_at)` — skema dalam `supabase/schema.sql`.
 - Log masuk melalui pautan e-mel (`signInWithOtp`). Selepas log masuk, app tarik data awan; versi dengan `updatedAt` lebih baharu menang (keseluruhan dokumen). Setiap `commit()` menolak ke awan (debounce 1.2 s). Data ditarik semula apabila tab kembali aktif.
 - Sandaran: `Blob` + `<a download>`; pulih melalui fail JSON.
+- PWA: ikon PNG 192/512 (any + maskable) dalam `icons/` — wajib supaya Chrome Android pasang sebagai app sebenar (WebAPK) tanpa lencana Chrome. Butang "Pasang app" di Tetapan guna `beforeinstallprompt`.
 - Hosting: Vercel (statik, tiada build). `vercel.json` set `no-cache` untuk `sw.js` dan `config.js`. Service worker guna rangkaian dahulu untuk fail sama-asal, dan tidak mengganggu permintaan ke Supabase/CDN.
 
 ## Gaya reka bentuk

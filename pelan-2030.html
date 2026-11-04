@@ -8,6 +8,10 @@
 <meta name="theme-color" content="#7A1F2B">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pelan 2030">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -605,6 +609,18 @@ function vNiaga() {
   </section>`;
 }
 
+let installEvt = null;
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; if (tab === "tetapan") render(); });
+window.addEventListener("appinstalled", () => { installEvt = null; toast("App dipasang"); render(); });
+function vInstall() {
+  if (isStandalone()) return "";
+  const body = installEvt
+    ? `<p class="small muted">Pasang Pelan 2030 sebagai app di skrin utama — buka penuh skrin, tanpa bar pelayar.</p><button class="primary" data-act="install">Pasang app</button>`
+    : `<p class="small muted">Di Chrome Android: menu ⋮ → <b>Pasang app</b> (bukan "Tambah ke skrin utama"). Di iPhone (Safari): butang Kongsi → <b>Tambah ke Skrin Utama</b>.</p>`;
+  return `<section class="card"><h2>Pasang di telefon</h2>${body}</section>`;
+}
+
 function vCloud() {
   let body;
   if (!cloudConfigured) body = `<p class="small muted">Belum disediakan. Isi URL dan kunci Supabase dalam fail <code>config.js</code>.</p>`;
@@ -628,6 +644,7 @@ function vTetapan() {
       <button class="primary">Simpan</button>
     </form>
   </section>
+  ${vInstall()}
   ${vCloud()}
   <section class="card">
     <h2>Sandaran</h2>
@@ -708,6 +725,7 @@ document.addEventListener("click", e => {
     }
     case "restore": document.getElementById("restoreFile").click(); break;
     case "sync": pullCloud(); break;
+    case "install": if (installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; render(); }); } break;
     case "logout": sb.auth.signOut().then(() => { sbUser = null; setSync(""); render(); toast("Telah log keluar. Data kekal dalam peranti ini."); }); break;
     case "wipe": if (confirm(sbUser ? "Padam SEMUA data, termasuk salinan di awan? Tindakan ini tidak boleh diundur." : "Padam SEMUA data? Tindakan ini tidak boleh diundur.") && confirm("Pasti? Muat turun sandaran dahulu jika perlu.")) { S = normalize(null); commit(); toast("Semua data dipadam"); } break;
   }

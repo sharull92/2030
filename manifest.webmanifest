@@ -1,12 +1,19 @@
 {
+  "id": "/pelan-2030.html",
   "name": "Pelan 2030",
   "short_name": "Pelan 2030",
   "description": "Perancangan kewangan dan kerjaya peribadi hingga 2030",
   "lang": "ms",
-  "start_url": "pelan-2030.html",
-  "scope": "./",
+  "start_url": "/pelan-2030.html",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#ECF0ED",
   "theme_color": "#7A1F2B",
-  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }

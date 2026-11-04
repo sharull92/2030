@@ -1,7 +1,7 @@
 // Service worker: rangkaian dahulu untuk fail app (sentiasa versi terkini),
 // cache sebagai sandaran apabila luar talian. Permintaan ke domain lain (Supabase, CDN) tidak diganggu.
-const CACHE = "pelan2030-v2";
-const ASSETS = ["./", "index.html", "pelan-2030.html", "config.js", "manifest.webmanifest", "icon.svg"];
+const CACHE = "pelan2030-v3";
+const ASSETS = ["./", "index.html", "pelan-2030.html", "config.js", "manifest.webmanifest", "icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))));
