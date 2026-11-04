@@ -142,12 +142,13 @@ svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans
 <script>
 // @logic-start — fungsi tulen (diuji dalam tests/calc.test.mjs)
 const DEFAULTS = () => ({
-  v: 6,
+  v: 7,
   updatedAt: 0,
   settings: { name: "", targetPassive: 3000, emergencyMonths: 6, notify: false, notifyDays: 3 },
   savings: 0,
   incomes: [], commitments: [], debts: [], tx: [], goals: [], ventures: [],
   cards: [], cardTx: [],
+  budgets: [],  // v7: bajet bulanan berulang { id, cat, amount }
   deposits: [], // v6: rekod simpanan { id, kind: "emas"|"asb"|"th", dir: "in"|"out", date, amount (RM), grams?, note }
   trash: {},   // v5: item dipadam { id: { list, item, at, cardTx?, ventureId?, index? } } — disimpan 30 hari
   paid: {},
@@ -164,7 +165,7 @@ function normalize(d) {
   o.gold = Object.assign({}, b.gold, d.gold || {});
   o.asb = Object.assign({}, b.asb, d.asb || {});
   o.th = Object.assign({}, b.th, d.th || {});
-  for (const k of ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits"]) {
+  for (const k of ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits", "budgets"]) {
     if (!Array.isArray(o[k])) o[k] = [];
   }
   if (!o.paid || typeof o.paid !== "object") o.paid = {};
@@ -181,6 +182,8 @@ function normalize(d) {
   if (o.v < 5) o.v = 5;
   // v5 → v6: rekod simpanan. Baki sedia ada (gold/asb/th .have) kekal sebagai "baki awal".
   if (o.v < 6) o.v = 6;
+  // v6 → v7: bajet bulanan ikut kategori
+  if (o.v < 7) o.v = 7;
   o.updatedAt = Number(o.updatedAt) || 0;
   return o;
 }
@@ -429,6 +432,7 @@ function monthReport(S, m, today) {
     committed: c.out, dsr: c.dsr, dsrLevel: c.dsrLevel,
     emergency: { asb: asbHave(S), asbTarget: Number(S.asb.s1) || 0, th: thHave(S), thTarget: Number(S.th.target) || 0, stage: e.stage },
     gold: { have: goldHave(S), target: Number(S.gold.target) || 0 },
+    budget: budgetStatus(S, m),
     deposits: S.deposits.filter(inM).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))) };
 }
 
@@ -492,14 +496,44 @@ function excelSheets(S, m, today) {
     { name: "Transaksi", rows: trx, money: [5], dates: [0], cols: [12, 9, 18, 30, 20, 13, 10] },
     { name: "Kad kredit", rows: kad, money: [5, 7], dates: [0], cols: [12, 18, 10, 16, 24, 13, 13, 14] },
     { name: "Simpanan", rows: sim, money: [4], grams: [3], dates: [0], cols: [26, 14, 10, 10, 13, 24] },
-    { name: "Komitmen & hutang", rows: km, money: [3, 4], cols: [24, 10, 9, 14, 14, 9, 16] }
+    { name: "Komitmen & hutang", rows: km, money: [3, 4], cols: [24, 10, 9, 14, 14, 9, 16] },
+    ...(S.budgets.length ? [{ name: "Bajet", money: [2, 3, 4], cols: [10, 22, 13, 13, 13, 7, 12], rows: (() => {
+      const months = m ? [m] : [...new Set([...S.tx, ...S.cardTx].map(t => String(t.date).slice(0, 7)))].filter(x => /^\d{4}-\d{2}$/.test(x)).sort();
+      const out = [["Bulan", "Kategori", "Bajet (RM)", "Belanja (RM)", "Baki (RM)", "%", "Status"]];
+      for (const mm of months) for (const b of budgetStatus(S, mm).rows)
+        out.push([fmtYMx(mm), b.cat, n2(b.amount), n2(b.spent), n2(b.left), isFinite(b.pct) ? Math.round(b.pct) : "", { lebih: "Lebih bajet", hampir: "Hampir", ok: "OK" }[b.level]]);
+      return out;
+    })() }] : [])
   ];
 }
 const fmtYMx = k => { const B = ["Jan","Feb","Mac","Apr","Mei","Jun","Jul","Ogo","Sep","Okt","Nov","Dis"]; const [y, mm] = String(k).split("-"); return B[+mm - 1] + " " + y; };
 
+// Bajet: kategori dipadankan tanpa kira huruf besar/kecil & ruang. Belanja = definisi sama dengan ringkasan
+// (tx Keluar kecuali "Kad kredit" + belanja kad).
+const catKey = c => String(c || "Lain-lain").trim().replace(/\s+/g, " ").toLowerCase();
+function spendByCat(S, m) {
+  const out = {};
+  const add = (cat, amt) => { const k = catKey(cat); if (!out[k]) out[k] = { label: String(cat || "Lain-lain").trim() || "Lain-lain", amount: 0 }; out[k].amount += Number(amt) || 0; };
+  for (const t of S.tx) if (t.type === "out" && t.cat !== "Kad kredit" && String(t.date).slice(0, 7) === m) add(t.cat, t.amount);
+  for (const t of S.cardTx) if (t.type === "belanja" && String(t.date).slice(0, 7) === m) add(t.cat, t.amount);
+  return out;
+}
+function budgetStatus(S, m) {
+  const sp = spendByCat(S, m);
+  const rows = S.budgets.map(b => {
+    const amount = Number(b.amount) || 0, spent = Math.round(((sp[catKey(b.cat)] || {}).amount || 0) * 100) / 100;
+    const pct = amount > 0 ? spent / amount * 100 : spent > 0 ? Infinity : 0;
+    return { id: b.id, cat: b.cat, amount, spent, left: Math.round((amount - spent) * 100) / 100, pct, level: pct > 100 ? "lebih" : pct >= 80 ? "hampir" : "ok" };
+  }).sort((a, b) => b.pct - a.pct);
+  const keys = new Set(S.budgets.map(b => catKey(b.cat)));
+  const unbudgeted = Object.entries(sp).filter(([k]) => !keys.has(k)).map(([, v]) => ({ cat: v.label, spent: Math.round(v.amount * 100) / 100 })).sort((a, b) => b.spent - a.spent);
+  const budget = sum(rows, r => r.amount), spentB = sum(rows, r => r.spent);
+  return { rows, unbudgeted, budget, spent: spentB, unbudgetedTotal: sum(unbudgeted, u => u.spent), pct: budget ? spentB / budget * 100 : 0 };
+}
+
 // ---------- tong sampah & pulih ----------
-const LISTS = ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits"];
-const LIST_LABEL = { incomes: "Pendapatan", commitments: "Komitmen", debts: "Hutang", tx: "Transaksi", goals: "Matlamat", ventures: "Projek niaga", cards: "Kad kredit", cardTx: "Rekod kad", deposits: "Rekod simpanan", steps: "Langkah projek" };
+const LISTS = ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits", "budgets"];
+const LIST_LABEL = { incomes: "Pendapatan", commitments: "Komitmen", debts: "Hutang", tx: "Transaksi", goals: "Matlamat", ventures: "Projek niaga", cards: "Kad kredit", cardTx: "Rekod kad", deposits: "Rekod simpanan", budgets: "Bajet", steps: "Langkah projek" };
 function purgeTrash(S, now, days = 30) {
   for (const [k, e] of Object.entries(S.trash)) if (!e || now - (Number(e.at) || 0) > days * 864e5) delete S.trash[k];
 }
@@ -560,6 +594,7 @@ function describeItem(list, it) {
     case "ventures": return it.name;
     case "cards": return `${it.name} · had ${rm(it.limit)}`;
     case "steps": return it.t;
+    case "budgets": return `${it.cat} · ${rm(it.amount)}/bln`;
     case "deposits": return `${{ emas: "Emas", asb: "ASB", th: "Tabung Haji" }[it.kind] || it.kind} ${it.dir === "out" ? "keluar" : "simpan"} ${it.kind === "emas" ? (Number(it.grams) || 0) + " g" + (it.amount ? " (" + rm(it.amount) + ")" : "") : rm(it.amount)} · ${it.date}`;
     default: return String(it.name || it.title || it.id);
   }
@@ -932,6 +967,7 @@ function nextSteps(c) {
     if (e.stage === 1) s.push(`Dana kecemasan stage 1: tambah ${RM(e.s1.need)} lagi dalam ASB${isFinite(e.s1.perMonth) ? ` (${RM(e.s1.perMonth)} sebulan)` : ""}.`);
     else if (e.stage === 2) s.push(`Dana kecemasan stage 2: tambah ${RM(e.s2.need)} lagi dalam Tabung Haji${isFinite(e.s2.perMonth) ? ` (${RM(e.s2.perMonth)} sebulan)` : ""}.`); }
   for (const cd of S.cards) { const k = cardCalc(S, cd, today()); if (k.util >= 30) s.push(`Kad ${cd.name} guna ${k.util.toFixed(0)}% had — cuba kurangkan bawah 30%.`); }
+  for (const r of budgetStatus(S, ym(today())).rows) if (r.level === "lebih") s.push(`Bajet ${r.cat} bulan ini lebih ${RM(-r.left)}.`);
   if (!S.goals.length) s.push("Isi matlamat tahunan di tab Pelan 2030 (guna templat).");
   const g = S.goals.filter(x => !x.done).sort((a, b) => a.year - b.year)[0];
   if (g) s.push(`Matlamat ${g.year}: ${g.title}`);
@@ -983,6 +1019,14 @@ function vRingkasan() {
     <div class="row between small"><span>${RM(c.mix.pasif)} / ${RM(S.settings.targetPassive)} sebulan</span><span>${c.passivePct.toFixed(0)}%</span></div>
     ${bar(c.passivePct)}
   </section>
+
+  ${S.budgets.length ? (() => { const bs = budgetStatus(S, ym(t)); const warn = bs.rows.filter(r => r.level !== "ok");
+    return `<section class="card">
+    <div class="row between"><h2>Bajet ${fmtYM(ym(t))}</h2><button class="sm" data-tab="kewangan" data-goto="bajet">Urus</button></div>
+    <div class="row between small"><span>${RM(bs.spent)} / ${RM(bs.budget)}</span><span>${bs.pct.toFixed(0)}%</span></div>
+    ${budgetBar({ pct: bs.pct, level: bs.pct > 100 ? "lebih" : bs.pct >= 80 ? "hampir" : "ok" })}
+    ${warn.length ? `<ul class="list" style="margin-top:6px">${warn.map(r => `<li style="padding:6px 0"><div class="grow">${esc(r.cat)}<div class="small muted">${RM(r.spent)} / ${RM(r.amount)}</div></div><span class="pill ${r.level === "lebih" ? "bad" : "warn"}">${r.level === "lebih" ? "Lebih " + RM(-r.left) : r.pct.toFixed(0) + "%"}</span></li>`).join("")}</ul>` : `<p class="small muted" style="margin:.4rem 0 0">Semua kategori dalam bajet 👍</p>`}
+  </section>`; })() : ""}
 
   ${S.cards.length ? `<section class="card">
     <h2>Kad kredit</h2>
@@ -1055,6 +1099,7 @@ function reportHTML(r) {
   </div>
   <h2>Duit keluar ikut kategori</h2>
   ${r.byCat.length ? tbl(["Kategori", "%", "Jumlah (RM)"], r.byCat.map(c => `<tr><td>${esc(c.cat)}<div class="bar"><i style="width:${c.pct.toFixed(1)}%"></i></div></td><td class="r">${c.pct.toFixed(0)}%</td><td class="r">${R(c.amount)}</td></tr>`).join(""), `<tfoot><tr><td>Jumlah</td><td></td><td class="r">${R(r.out)}</td></tr></tfoot>`) : `<p class="muted">Tiada duit keluar.</p>`}
+  ${r.budget && r.budget.rows.length ? `<h2>Bajet vs belanja</h2>${tbl(["Kategori", "Bajet (RM)", "Belanja (RM)", "Baki (RM)", "%"], r.budget.rows.map(b => `<tr><td>${esc(b.cat)}</td><td class="r">${R(b.amount)}</td><td class="r">${R(b.spent)}</td><td class="r ${b.left < 0 ? "neg" : "pos"}">${R(b.left)}</td><td class="r">${isFinite(b.pct) ? b.pct.toFixed(0) + "%" : "—"}</td></tr>`).join(""), `<tfoot><tr><td>Jumlah</td><td class="r">${R(r.budget.budget)}</td><td class="r">${R(r.budget.spent)}</td><td class="r">${R(r.budget.budget - r.budget.spent)}</td><td class="r">${r.budget.pct.toFixed(0)}%</td></tr></tfoot>`)}${r.budget.unbudgetedTotal ? `<p class="note">Belanja tanpa bajet: ${R(r.budget.unbudgetedTotal)}</p>` : ""}` : ""}
   <h2>Senarai transaksi (${r.rows.length})</h2>
   ${r.rows.length ? tbl(["Tarikh", "Kategori", "Nota", "Cara bayar", "Jumlah (RM)"], r.rows.map(x => `<tr class="${x.bill ? "muted" : ""}"><td>${fmtD(x.date)}</td><td>${esc(x.cat)}</td><td>${esc(x.note)}</td><td>${esc(x.via)}</td><td class="r ${x.type === "in" ? "pos" : x.bill ? "" : "neg"}">${x.type === "in" ? "+" : "−"}${R(x.amount)}</td></tr>`).join("")) + (r.rows.some(x => x.bill) ? `<p class="note">Baris kelabu = bayaran bil kad kredit; tidak dikira dalam Keluar kerana belanja kad sudah dikira.</p>` : "") : `<p class="muted">Tiada transaksi.</p>`}
   ${r.cards.length ? `<h2>Kad kredit</h2>${tbl(["Kad", "Belanja bulan ini (RM)", "Dibayar bulan ini (RM)", "Baki semasa (RM)", "%"], r.cards.map(c => `<tr><td>${esc(c.name)}</td><td class="r">${R(c.spend)}</td><td class="r">${R(c.paid)}</td><td class="r ${c.balance > 0 ? "neg" : "pos"}">${R(c.balance)}</td><td class="r">${c.util.toFixed(0)}%</td></tr>`).join(""))}<p class="note">% = penggunaan had kredit.</p>` : ""}
@@ -1147,6 +1192,46 @@ async function exportExcel(all) {
   }
 }
 
+let budgetMonth = ym(new Date());
+const BUDGET_CATS = ["Makan", "Minyak", "Barang dapur", "Rumah", "Utiliti", "Telefon / internet", "Anak / sekolah", "Keluarga", "Pakaian", "Kesihatan", "Hiburan", "Sedekah", "Lain-lain"];
+function budgetBar(r) {
+  const cls = r.level === "lebih" ? "" : r.level === "hampir" ? "amber" : "";
+  const col = r.level === "lebih" ? "var(--bad)" : r.level === "hampir" ? "var(--warn)" : "var(--teal)";
+  return `<div class="bar ${cls}" role="progressbar" aria-valuenow="${Math.round(Math.min(r.pct, 999))}" aria-valuemin="0" aria-valuemax="100"><i style="width:${Math.min(100, r.pct)}%;background:${col}"></i></div>`;
+}
+function vBudget() {
+  const b = budgetStatus(S, budgetMonth);
+  const cats = [...new Set([...BUDGET_CATS, ...S.tx.filter(t => t.type === "out" && t.cat !== "Kad kredit").map(t => t.cat), ...S.cardTx.filter(t => t.type === "belanja").map(t => t.cat)].filter(Boolean).map(c => String(c).trim()))];
+  const pillB = r => r.level === "lebih" ? `<span class="pill bad">Lebih ${RM(-r.left)}</span>` : r.level === "hampir" ? `<span class="pill warn">Baki ${RM(r.left)}</span>` : `<span class="pill ok">Baki ${RM(r.left)}</span>`;
+  return `<section class="card" id="bajet">
+    <div class="row between"><h2>Bajet bulanan</h2>${monthSelect("budgetmonth", budgetMonth, [...S.tx, ...S.cardTx].map(t => t.date)).replace(/<option value="" (selected)?>Semua bulan<\/option>/, "")}</div>
+    ${S.budgets.length ? `<div class="row between small" style="margin-top:4px"><span>Belanja ${RM(b.spent)} / bajet ${RM(b.budget)}</span><span>${b.pct.toFixed(0)}%</span></div>
+    ${budgetBar({ pct: b.pct, level: b.pct > 100 ? "lebih" : b.pct >= 80 ? "hampir" : "ok" })}
+    <ul class="list" style="margin-top:8px">${b.rows.map(r => `<li style="align-items:flex-start"><div class="grow">
+        <div class="row between"><span>${esc(r.cat)}</span>${pillB(r)}</div>
+        <div class="row between small muted" style="margin:2px 0 4px"><span>${RM(r.spent)} / ${RM(r.amount)}</span><span>${isFinite(r.pct) ? r.pct.toFixed(0) + "%" : "—"}</span></div>
+        ${budgetBar(r)}
+      </div>
+      <input type="number" inputmode="decimal" step="0.01" min="0" value="${r.amount}" data-act="budgetamt" data-id="${r.id}" aria-label="Bajet ${esc(r.cat)}" style="width:96px">
+      ${del("budgets", r.id)}</li>`).join("")}</ul>` : `<p class="empty">Belum ada bajet. Tetapkan had sebulan bagi setiap kategori — belanja tunai dan kad kredit dikira automatik.</p>`}
+    ${b.unbudgeted.length ? `<p class="small muted" style="margin:10px 0 4px">Belanja tanpa bajet: <b>${RM(b.unbudgetedTotal)}</b> — ${b.unbudgeted.slice(0, 6).map(u => `<button class="ghost sm" data-act="budgetquick" data-cat="${esc(u.cat)}" data-amt="${Math.ceil(u.spent / 10) * 10}" title="Tambah bajet">${esc(u.cat)} ${RM(u.spent)} ＋</button>`).join(" ")}</p>` : ""}
+    <form class="add" data-form="budget">
+      <label>Kategori<input name="cat" list="budgetcats" required placeholder="cth. Makan"></label>
+      <label>Bajet sebulan (RM)<input name="amount" type="number" inputmode="decimal" step="0.01" min="0.01" required></label>
+      <button class="primary">Tetapkan bajet</button>
+    </form>
+    <datalist id="budgetcats">${cats.map(c => `<option value="${esc(c)}">`).join("")}</datalist>
+    <p class="small muted">Nama kategori mesti sama dengan kategori transaksi (huruf besar/kecil tidak penting). Bajet berulang setiap bulan.</p>
+  </section>`;
+}
+// Amaran selepas rekod belanja jika bajet kategori itu hampir habis / lebih.
+function budgetWarn(cat, date) {
+  const m = String(date).slice(0, 7);
+  const r = budgetStatus(S, m).rows.find(x => catKey(x.cat) === catKey(cat));
+  if (!r || r.level === "ok") return "";
+  return r.level === "lebih" ? ` · ⚠️ Bajet ${r.cat} lebih ${RM(-r.left)}` : ` · Bajet ${r.cat} ${r.pct.toFixed(0)}% digunakan`;
+}
+
 function vKewangan() {
   const c = calc(S), t = today();
   const inSel = x => !txMonth || String(x.date).slice(0, 7) === txMonth;
@@ -1167,6 +1252,8 @@ function vKewangan() {
     <div class="row">${monthSelect("reportmonth", reportMonth, [...S.tx, ...S.cardTx].map(t => t.date)).replace('<option value="" selected>Semua bulan</option>', "").replace('<option value="" >Semua bulan</option>', "")}<button class="primary" data-act="pdf">Eksport PDF</button><button data-act="xlsx">Eksport Excel</button></div>
     <button class="ghost sm" data-act="xlsxall" style="margin-top:6px">Excel semua data</button>
   </section>
+
+  ${vBudget()}
 
   <section class="card">
     <h2>Sumber pendapatan</h2>
@@ -1612,8 +1699,11 @@ document.addEventListener("submit", e => {
     case "tx":
       if (d.via && d.type === "out" && S.cards.some(c => c.id === d.via)) {
         S.cardTx.push({ id: uid(), cardId: d.via, date: d.date, type: "belanja", amount: num(d.amount), cat: d.cat.trim(), note: d.note.trim() });
-        toast("Direkod pada kad " + cardName(d.via) + " — belum bayar");
-      } else S.tx.push({ id: uid(), date: d.date, type: d.type, cat: d.cat.trim(), amount: num(d.amount), note: d.note.trim() });
+        toast("Direkod pada kad " + cardName(d.via) + " — belum bayar" + budgetWarn(d.cat, d.date));
+      } else {
+        S.tx.push({ id: uid(), date: d.date, type: d.type, cat: d.cat.trim(), amount: num(d.amount), note: d.note.trim() });
+        if (d.type === "out") { const w = budgetWarn(d.cat, d.date); if (w) toast("Direkod" + w); }
+      }
       if (txMonth) txMonth = d.date.slice(0, 7);
       break;
     case "deposit": {
@@ -1643,7 +1733,13 @@ document.addEventListener("submit", e => {
       if (num(d.opening) > 0) S.cardTx.push({ id: uid(), cardId: card.id, date: ymd(today()), type: "awal", amount: num(d.opening), cat: "Baki awal", note: "" });
       break;
     }
-    case "cardtx": S.cardTx.push({ id: uid(), cardId: d.cardId, date: d.date, type: "belanja", amount: num(d.amount), cat: d.cat.trim(), note: d.note.trim() }); if (cardMonth) cardMonth = d.date.slice(0, 7); toast("Belanja kad direkod"); break;
+    case "cardtx": S.cardTx.push({ id: uid(), cardId: d.cardId, date: d.date, type: "belanja", amount: num(d.amount), cat: d.cat.trim(), note: d.note.trim() }); if (cardMonth) cardMonth = d.date.slice(0, 7); toast("Belanja kad direkod" + budgetWarn(d.cat, d.date)); break;
+    case "budget": {
+      const cat = d.cat.trim(), ex = S.budgets.find(x => catKey(x.cat) === catKey(cat));
+      if (ex) { ex.amount = num(d.amount); toast("Bajet " + ex.cat + " dikemas kini"); }
+      else { S.budgets.push({ id: uid(), cat, amount: num(d.amount) }); toast("Bajet " + cat + " ditetapkan"); }
+      break;
+    }
     case "cardpay": {
       const card = S.cards.find(x => x.id === f.dataset.id); const amt = num(d.amount);
       if (card && amt > 0) {
@@ -1660,7 +1756,9 @@ document.addEventListener("submit", e => {
 
 document.addEventListener("click", e => {
   const tb = e.target.closest("[data-tab]");
-  if (tb) { tab = tb.dataset.tab; try { localStorage.setItem(KEY + ":tab", tab); } catch {} render(); window.scrollTo(0, 0); return; }
+  if (tb) { tab = tb.dataset.tab; try { localStorage.setItem(KEY + ":tab", tab); } catch {} render(); window.scrollTo(0, 0);
+    if (tb.dataset.goto) { const g = document.getElementById(tb.dataset.goto); if (g) g.scrollIntoView(); }
+    return; }
   const b = e.target.closest("button[data-act]"); if (!b) return;
   const { act, id } = b.dataset;
   switch (act) {
@@ -1703,6 +1801,7 @@ document.addEventListener("click", e => {
     case "pdf": exportPDF(); break;
     case "xlsx": exportExcel(false); break;
     case "xlsxall": exportExcel(true); break;
+    case "budgetquick": if (!S.budgets.some(x => catKey(x.cat) === catKey(b.dataset.cat))) { S.budgets.push({ id: uid(), cat: b.dataset.cat, amount: num(b.dataset.amt) }); commit(); toast("Bajet " + b.dataset.cat + " ditetapkan " + RM(num(b.dataset.amt)) + " — ubah jika perlu"); } break;
     case "depall": depShowAll[b.dataset.key] = !depShowAll[b.dataset.key]; render(); break;
     case "restore1": if (restoreItem(S, id)) { commit(); toast("Dipulihkan"); } break;
     case "emptytrash": if (confirm("Kosongkan tong sampah? Item di dalamnya tidak boleh dipulihkan lagi.")) { S.trash = {}; commit(); } break;
@@ -1744,6 +1843,8 @@ document.addEventListener("change", e => {
   const act = el.dataset.act; if (!act) return;
   if (act === "txmonth") { txMonth = el.value; render(); }
   if (act === "reportmonth" && el.value) { reportMonth = el.value; }
+  if (act === "budgetmonth" && el.value) { budgetMonth = el.value; render(); }
+  if (act === "budgetamt") { const x = S.budgets.find(y => y.id === el.dataset.id); if (x && num(el.value) >= 0) { x.amount = num(el.value); commit(); } }
   if (act === "sumyear") { sumYear = num(el.value); render(); }
   if (act === "trendsel") { trendSel = el.value; render(); }
   if (act === "cardmonth") { cardMonth = el.value; render(); }
