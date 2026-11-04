@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -415,4 +415,28 @@ test("rekod simpanan: data v5 lama dapat deposits kosong, baki lama kekal", () =
   assert.deepEqual(o.deposits, []);
   assert.equal(L.goldHave(o), 3.5);
   assert.equal(L.asbHave(o), 8500);
+});
+
+test("excelSheets: helaian Excel bulan dipilih & semua data", () => {
+  const S = L.normalize({ settings: { name: "Sahrul" },
+    cards: [{ id: "k", name: "Visa", limit: 5000, dueDay: 15 }],
+    commitments: [{ id: "c", name: "Sewa", amount: 900.5, day: 5 }], paid: { "c:2026-11": true },
+    tx: [{ date: "2026-11-01", type: "in", cat: "Gaji", amount: 4782 }, { date: "2026-11-02", type: "out", cat: "DOBI", amount: 63.2 },
+         { date: "2026-11-10", type: "out", cat: "Kad kredit", amount: 100 }, { date: "2026-10-05", type: "out", cat: "Makan", amount: 6 }],
+    cardTx: [{ id: "k1", cardId: "k", date: "2026-11-03", type: "belanja", amount: 150, cat: "Minyak" }, { id: "k2", cardId: "k", date: "2026-11-10", type: "bayar", amount: 100 }],
+    deposits: [{ id: "e", kind: "emas", dir: "in", date: "2026-11-04", grams: 1.025, amount: 405.39 }] });
+  const t = new Date(2026, 10, 30);
+  const sh = Object.fromEntries(L.excelSheets(S, "2026-11", t).map(x => [x.name, x.rows]));
+  assert.deepEqual(Object.keys(sh), ["Ringkasan", "Transaksi", "Kad kredit", "Simpanan", "Komitmen & hutang"]);
+  assert.deepEqual(sh.Ringkasan[0], ["Laporan kewangan", "Nov 2026"]);
+  assert.deepEqual(sh.Ringkasan[4], ["Keluar (RM)", 213.2]);           // 63.20 + 150 (bil kad tidak dikira)
+  assert.equal(sh.Transaksi.length, 1 + 4);                            // Okt dikecualikan
+  assert.deepEqual(sh.Transaksi[3], ["2026-11-03", "Keluar", "Minyak", "", "Kad Visa", 150, "Ya"]);
+  assert.equal(sh.Transaksi.find(r => r[2] === "Kad kredit")[6], "Tidak");
+  assert.deepEqual(sh["Kad kredit"][1].slice(6), ["Separa", 50]);
+  assert.deepEqual(sh.Simpanan[1], ["2026-11-04", "Emas", "Beli", 1.025, 405.39, ""]);
+  assert.equal(sh["Komitmen & hutang"][1][6], "Sudah bayar");
+  const all = Object.fromEntries(L.excelSheets(S, "", t).map(x => [x.name, x.rows]));
+  assert.equal(all.Ringkasan[0][1], "Semua data");
+  assert.equal(all.Transaksi.length, 1 + 5);
 });

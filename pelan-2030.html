@@ -432,6 +432,71 @@ function monthReport(S, m, today) {
     deposits: S.deposits.filter(inM).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))) };
 }
 
+// Helaian Excel sebagai tatasusunan baris. m = "YYYY-MM" atau "" (semua data).
+// Setiap helaian: { name, rows, money: [indeks lajur RM], grams: [indeks lajur gram], dates: [indeks lajur tarikh] }
+function excelSheets(S, m, today) {
+  const inR = t => !m || String(t.date).slice(0, 7) === m;
+  const cardNm = id => (S.cards.find(c => c.id === id) || { name: "(kad dipadam)" }).name;
+  const KL = { emas: "Emas", asb: "ASB", th: "Tabung Haji" };
+  const n2 = v => Math.round((Number(v) || 0) * 100) / 100;
+  // Ringkasan
+  const ys = m ? null : yearSummary(S, 0, today);
+  const flow = m ? monthFlow(S, m) : { in: ys.income, out: ys.spent };
+  const tx = S.tx.filter(inR), ctx = S.cardTx.filter(inR);
+  const byCat = {};
+  for (const t of tx) if (t.type === "out" && t.cat !== "Kad kredit") byCat[t.cat || "Lain-lain"] = (byCat[t.cat || "Lain-lain"] || 0) + (Number(t.amount) || 0);
+  for (const t of ctx) if (t.type === "belanja") byCat[t.cat || "Lain-lain"] = (byCat[t.cat || "Lain-lain"] || 0) + (Number(t.amount) || 0);
+  const c = calc(S);
+  const ring = [
+    ["Laporan kewangan", m ? fmtYMx(m) : "Semua data"],
+    ["Nama", S.settings.name || ""],
+    [],
+    ["Masuk (RM)", n2(flow.in)],
+    ["Keluar (RM)", n2(flow.out)],
+    ["Bersih (RM)", n2(flow.in - flow.out)],
+    ["Komitmen + hutang sebulan (RM)", n2(c.out)],
+    ["DSR", isFinite(c.dsr) ? Math.round(c.dsr) + "% (" + c.dsrLevel + ")" : "—"],
+    [],
+    ["Duit keluar ikut kategori", "Jumlah (RM)", "%"],
+    ...Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, n2(v), flow.out ? Math.round(v / flow.out * 1000) / 10 : 0])
+  ];
+  // Transaksi (tunai + belanja kad)
+  const trx = [["Tarikh", "Jenis", "Kategori", "Nota", "Cara bayar", "Jumlah (RM)", "Dikira dalam Keluar"],
+    ...[...tx.map(t => [t.date, t.type === "in" ? "Masuk" : "Keluar", t.cat, t.note || "", t.type === "in" ? "" : t.cat === "Kad kredit" ? "Bayar bil kad" : "Tunai / debit", n2(t.amount), t.type === "in" ? "" : t.cat === "Kad kredit" ? "Tidak" : "Ya"]),
+       ...ctx.filter(t => t.type === "belanja").map(t => [t.date, "Keluar", t.cat, t.note || "", "Kad " + cardNm(t.cardId), n2(t.amount), "Ya"])]
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])))];
+  // Kad kredit
+  const alloc = Object.assign({}, ...S.cards.map(k => cardAlloc(S, k.id)));
+  const ST = { dibayar: "Sudah bayar", separa: "Separa", belum: "Belum bayar" };
+  const kad = [["Tarikh", "Kad", "Jenis", "Kategori", "Nota", "Jumlah (RM)", "Status bayar", "Baki belum bayar (RM)"],
+    ...ctx.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).map(t => [t.date, cardNm(t.cardId), { belanja: "Belanja", bayar: "Bayaran", awal: "Baki awal" }[t.type] || t.type, t.cat || "", t.note || "", n2(t.amount),
+      t.type === "bayar" ? "" : (ST[(alloc[t.id] || {}).status] || ""), t.type === "bayar" ? "" : n2((alloc[t.id] || {}).owed)]),
+    [],
+    ["Ringkasan kad", "Had (RM)", "Baki semasa (RM)", "% had"],
+    ...S.cards.map(k => { const r = cardCalc(S, k, today); return [k.name, n2(r.limit), n2(r.balance), Math.round(r.util * 10) / 10]; })];
+  // Simpanan
+  const sim = [["Tarikh", "Akaun", "Jenis", "Gram", "Jumlah (RM)", "Nota"],
+    ...S.deposits.filter(inR).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).map(d => [d.date, KL[d.kind] || d.kind,
+      d.dir === "out" ? (d.kind === "emas" ? "Jual" : "Keluarkan") : (d.kind === "emas" ? "Beli" : "Simpan"), d.kind === "emas" ? Number(d.grams) || 0 : "", n2(d.amount), d.note || ""]),
+    [],
+    ["Jumlah semasa", "Ada", "Sasaran"],
+    ["Emas (gram)", goldHave(S), Number(S.gold.target) || 0],
+    ["ASB · Stage 1 (RM)", asbHave(S), Number(S.asb.s1) || 0],
+    ["Tabung Haji · Stage 2 (RM)", thHave(S), Number(S.th.target) || 0]];
+  // Komitmen & hutang
+  const km = [["Perkara", "Jenis", "Hari bayar", "Jumlah sebulan (RM)", "Baki hutang (RM)", "Faedah %", m ? "Status " + fmtYMx(m) : "Status bulan ini"],
+    ...S.commitments.map(x => [x.name, "Komitmen", Number(x.day) || "", n2(x.amount), "", "", S.paid[x.id + ":" + (m || ym(today))] ? "Sudah bayar" : "Belum bayar"]),
+    ...S.debts.map(x => [x.name, "Hutang", Number(x.day) || "", n2(x.payment), n2(x.balance), Number(x.rate) || 0, (Number(x.balance) || 0) <= 0 ? "Selesai" : S.paid[x.id + ":" + (m || ym(today))] ? "Sudah bayar" : "Belum bayar"])];
+  return [
+    { name: "Ringkasan", rows: ring, money: [1], cols: [34, 16, 8] },
+    { name: "Transaksi", rows: trx, money: [5], dates: [0], cols: [12, 9, 18, 30, 20, 13, 10] },
+    { name: "Kad kredit", rows: kad, money: [5, 7], dates: [0], cols: [12, 18, 10, 16, 24, 13, 13, 14] },
+    { name: "Simpanan", rows: sim, money: [4], grams: [3], dates: [0], cols: [26, 14, 10, 10, 13, 24] },
+    { name: "Komitmen & hutang", rows: km, money: [3, 4], cols: [24, 10, 9, 14, 14, 9, 16] }
+  ];
+}
+const fmtYMx = k => { const B = ["Jan","Feb","Mac","Apr","Mei","Jun","Jul","Ogo","Sep","Okt","Nov","Dis"]; const [y, mm] = String(k).split("-"); return B[+mm - 1] + " " + y; };
+
 // ---------- tong sampah & pulih ----------
 const LISTS = ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits"];
 const LIST_LABEL = { incomes: "Pendapatan", commitments: "Komitmen", debts: "Hutang", tx: "Transaksi", goals: "Matlamat", ventures: "Projek niaga", cards: "Kad kredit", cardTx: "Rekod kad", deposits: "Rekod simpanan", steps: "Langkah projek" };
@@ -1047,6 +1112,41 @@ function depList(kinds) {
   }).join("")}</ul>${rows.length > 5 ? `<button class="ghost sm" data-act="depall" data-key="${key}">${depShowAll[key] ? "Tunjuk 5 terkini" : `Lihat semua (${rows.length})`}</button>` : ""}`;
 }
 
+function loadScript(src) {
+  return new Promise((res, rej) => { const el = document.createElement("script"); el.src = src; el.onload = res; el.onerror = () => rej(new Error("gagal muat")); document.head.appendChild(el); });
+}
+async function exportExcel(all) {
+  const m = all ? "" : reportMonth;
+  const sheets = excelSheets(S, m, today());
+  const fname = "Pelan2030-" + (m || "semua-data") + ".xlsx";
+  try {
+    if (!window.XLSX) { toast("Menyediakan Excel…"); await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"); }
+    const X = window.XLSX, wb = X.utils.book_new();
+    for (const sh of sheets) {
+      const rows = sh.rows.map((r, ri) => r.map((v, ci) => (sh.dates || []).includes(ci) && ri > 0 && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(v + "T00:00:00") : v));
+      const ws = X.utils.aoa_to_sheet(rows, { cellDates: true });
+      const rng = X.utils.decode_range(ws["!ref"] || "A1");
+      for (let R = 1; R <= rng.e.r; R++) for (let C = 0; C <= rng.e.c; C++) {
+        const cell = ws[X.utils.encode_cell({ r: R, c: C })];
+        if (!cell) continue;
+        if (cell.t === "n" && (sh.money || []).includes(C)) cell.z = "#,##0.00";
+        if (cell.t === "n" && (sh.grams || []).includes(C)) cell.z = "0.000";
+        if (cell.t === "d") cell.z = "dd/mm/yyyy";
+      }
+      ws["!cols"] = (sh.cols || []).map(w => ({ wch: w }));
+      X.utils.book_append_sheet(wb, ws, sh.name);
+    }
+    X.writeFile(wb, fname);
+    toast("Excel dimuat turun: " + fname);
+  } catch (e) {
+    // Luar talian / CDN gagal: eksport CSV (boleh dibuka dalam Excel) — helaian Transaksi sahaja.
+    const csv = "\ufeff" + sheets[1].rows.map(r => r.map(v => { const t = String(v ?? ""); return /[",\n;]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; }).join(",")).join("\r\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.download = fname.replace(".xlsx", "-transaksi.csv"); document.body.appendChild(a); a.click(); a.remove();
+    toast("Tiada internet untuk Excel penuh — fail CSV transaksi dimuat turun");
+  }
+}
+
 function vKewangan() {
   const c = calc(S), t = today();
   const inSel = x => !txMonth || String(x.date).slice(0, 7) === txMonth;
@@ -1062,9 +1162,10 @@ function vKewangan() {
   const pill = n => stage === n ? `<span class="pill warn">Sedang dibina</span>` : stage > n ? `<span class="pill ok">Selesai</span>` : `<span class="pill">Seterusnya</span>`;
   return `
   <section class="card">
-    <h2>Laporan bulanan</h2>
-    <p class="small muted">Eksport ringkasan, kategori, transaksi, kad kredit, komitmen dan simpanan bagi sebulan. Dalam dialog cetak, pilih <b>Simpan sebagai PDF</b>.</p>
-    <div class="row">${monthSelect("reportmonth", reportMonth, [...S.tx, ...S.cardTx].map(t => t.date)).replace('<option value="" selected>Semua bulan</option>', "").replace('<option value="" >Semua bulan</option>', "")}<button class="primary" data-act="pdf">Eksport PDF</button></div>
+    <h2>Laporan & eksport</h2>
+    <p class="small muted"><b>PDF</b>: laporan sebulan (dalam dialog cetak pilih <b>Simpan sebagai PDF</b>). <b>Excel</b>: fail .xlsx dengan helaian Ringkasan, Transaksi, Kad kredit, Simpanan dan Komitmen & hutang.</p>
+    <div class="row">${monthSelect("reportmonth", reportMonth, [...S.tx, ...S.cardTx].map(t => t.date)).replace('<option value="" selected>Semua bulan</option>', "").replace('<option value="" >Semua bulan</option>', "")}<button class="primary" data-act="pdf">Eksport PDF</button><button data-act="xlsx">Eksport Excel</button></div>
+    <button class="ghost sm" data-act="xlsxall" style="margin-top:6px">Excel semua data</button>
   </section>
 
   <section class="card">
@@ -1600,6 +1701,8 @@ document.addEventListener("click", e => {
       break;
     }
     case "pdf": exportPDF(); break;
+    case "xlsx": exportExcel(false); break;
+    case "xlsxall": exportExcel(true); break;
     case "depall": depShowAll[b.dataset.key] = !depShowAll[b.dataset.key]; render(); break;
     case "restore1": if (restoreItem(S, id)) { commit(); toast("Dipulihkan"); } break;
     case "emptytrash": if (confirm("Kosongkan tong sampah? Item di dalamnya tidak boleh dipulihkan lagi.")) { S.trash = {}; commit(); } break;
