@@ -423,7 +423,8 @@ function downloadICS() {
 const CFG = window.PELAN_CONFIG || {};
 let cloudConfigured = !!(CFG.supabaseUrl && CFG.supabaseKey);
 let sb = null, sbUser = null, syncMsg = "", pushT = null;
-let plan = null, members = [], channel = null, syncing = false, syncAgain = false;
+let plan = null, members = [], channel = null, syncing = false, syncAgain = false, shareOpen = false;
+document.addEventListener("toggle", e => { if (e.target.id === "shareBox") shareOpen = e.target.open; }, true);
 const BASEKEY = KEY + ":base";
 function setSync(msg) {
   syncMsg = msg;
@@ -1003,7 +1004,7 @@ function vCloud() {
     <p class="small muted" id="syncMsg">${esc(syncMsg)}</p>
     <div class="row"><button data-act="sync">Segerak sekarang</button><button data-act="logout">Log keluar</button></div>
     <p class="small muted" style="margin-top:10px">Di telefon lain, log masuk dengan e-mel dan kata laluan yang sama untuk lihat data yang sama.</p>
-    <details style="margin-top:8px"><summary>Kongsi dengan e-mel lain (pilihan)</summary>${share}</details>`;
+    <details id="shareBox" style="margin-top:8px" ${shareOpen || members.length || (plan && plan.owner_id !== sbUser.id) ? "open" : ""}><summary>Kongsi dengan e-mel lain (pilihan)</summary>${share}</details>`;
   }
   return `<section class="card"><h2>Penyegerakan awan</h2>${body}</section>`;
 }
