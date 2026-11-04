@@ -10,7 +10,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 
 ## Ciri sedia ada (6 tab, nav bawah)
 1. **Ringkasan** — hero "cop passport" 2026–2030 + kiraan hari; pendapatan, komitmen + hutang, baki, DSR (<40% sihat, 40–60% berhati-hati, >60% tinggi); campuran pendapatan aktif/sampingan/pasif; kemajuan sasaran pasif; peringatan tarikh bayar 14 hari (butang "Dah bayar" auto-rekod transaksi); graf trend 6/12 bulan (SVG inline); ringkasan emas & dana kecemasan; langkah seterusnya.
-2. **Kewangan** — sumber pendapatan; rekod transaksi ikut bulan; sasaran emas (gram); dana kecemasan berperingkat: Stage 1 ASB RM15,000 → Stage 2 Tabung Haji RM15,000 (`emergencyCalc`), % dihadkan per stage, tunjuk berapa bulan komitmen+hutang boleh ditampung (termasuk `savings` = simpanan tunai lain).
+2. **Kewangan** — sumber pendapatan; rekod transaksi ikut bulan atau "Semua bulan" (`monthSelect` + tajuk bulan `withMonthHeads`; sama untuk rekod kad); sasaran emas (gram); dana kecemasan berperingkat: Stage 1 ASB RM15,000 → Stage 2 Tabung Haji RM15,000 (`emergencyCalc`), % dihadkan per stage, tunjuk berapa bulan komitmen+hutang boleh ditampung (termasuk `savings` = simpanan tunai lain).
 3. **Hutang/Kad** — kad kredit (had, baki, % penggunaan <30% sihat, belanja bulan ikut kategori, bayaran minimum ≈5%/RM50, rekod belanja & bayaran; bayaran kad juga direkod dalam `tx`); komitmen bulanan (tarikh bayar); hutang disusun ikut faedah tertinggi (avalanche) dengan anggaran tarikh selesai.
 4. **Pelan 2030** — matlamat ikut tahun, templat cadangan (TTT → HRD Corp → modul pematuhan → app AI → pasif).
 5. **Niaga** — projek dengan peringkat Idea → Validasi → Bina → Lancar → Skala + senarai langkah proses; templat idea.
