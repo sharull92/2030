@@ -153,3 +153,76 @@ create policy "ph_select" on public.plan_history for select to authenticated usi
 revoke all on public.plan_history from anon, authenticated;
 grant select on public.plan_history to authenticated;
 revoke all on function public.save_plan_history() from public, anon, authenticated;
+
+-- =====================================================================
+-- AUTO CATAT DUIT MASUK DARI E-MEL (Google Apps Script → add_incoming)
+-- Skrip Gmail pengguna memanggil add_incoming(token, …). Token hanya boleh
+-- MENAMBAH duit masuk ke satu pelan; tidak boleh membaca atau mengubah data.
+-- App mengimport rekod `incoming` ke transaksi, kemudian tanda imported = true.
+-- =====================================================================
+create table if not exists public.plan_tokens (
+  token      text primary key check (length(token) >= 32),
+  plan_id    uuid not null references public.shared_plans (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.incoming (
+  id          bigserial primary key,
+  plan_id     uuid not null references public.shared_plans (id) on delete cascade,
+  amount      numeric(14,2) not null check (amount > 0 and amount < 100000000),
+  tx_date     date not null default current_date,
+  description text,
+  source      text,
+  msg_id      text not null,
+  imported    boolean not null default false,
+  created_at  timestamptz not null default now(),
+  unique (plan_id, msg_id)
+);
+create index if not exists incoming_pending_idx on public.incoming (plan_id) where not imported;
+
+alter table public.plan_tokens enable row level security;
+alter table public.incoming enable row level security;
+drop policy if exists "pt_select" on public.plan_tokens;
+drop policy if exists "pt_insert" on public.plan_tokens;
+drop policy if exists "pt_delete" on public.plan_tokens;
+create policy "pt_select" on public.plan_tokens for select to authenticated using (public.can_access_plan(plan_id));
+create policy "pt_insert" on public.plan_tokens for insert to authenticated with check (public.can_access_plan(plan_id));
+create policy "pt_delete" on public.plan_tokens for delete to authenticated using (public.can_access_plan(plan_id));
+drop policy if exists "in_select" on public.incoming;
+drop policy if exists "in_update" on public.incoming;
+create policy "in_select" on public.incoming for select to authenticated using (public.can_access_plan(plan_id));
+create policy "in_update" on public.incoming for update to authenticated using (public.can_access_plan(plan_id)) with check (public.can_access_plan(plan_id));
+revoke all on public.plan_tokens from anon, authenticated;
+grant select, insert, delete on public.plan_tokens to authenticated;
+revoke all on public.incoming from anon, authenticated;
+grant select on public.incoming to authenticated;
+grant update (imported) on public.incoming to authenticated;
+
+create or replace function public.add_incoming(p_token text, p_amount numeric, p_date date, p_desc text, p_source text, p_msg_id text)
+returns text language plpgsql security definer set search_path = '' as $$
+declare pid uuid;
+begin
+  select plan_id into pid from public.plan_tokens where token = p_token;
+  if pid is null then raise exception 'token tidak sah'; end if;
+  if p_amount is null or p_amount <= 0 then raise exception 'jumlah tidak sah'; end if;
+  if coalesce(p_msg_id, '') = '' then raise exception 'msg_id diperlukan'; end if;
+  insert into public.incoming (plan_id, amount, tx_date, description, source, msg_id)
+  values (pid, round(p_amount, 2), coalesce(p_date, current_date), left(p_desc, 300), left(p_source, 150), left(p_msg_id, 200))
+  on conflict (plan_id, msg_id) do nothing;
+  return 'ok';
+end $$;
+
+create or replace function public.check_token(p_token text) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.plan_tokens where token = p_token);
+$$;
+
+revoke all on function public.add_incoming(text, numeric, date, text, text, text) from public;
+revoke all on function public.check_token(text) from public;
+grant execute on function public.add_incoming(text, numeric, date, text, text, text) to anon, authenticated;
+grant execute on function public.check_token(text) to anon, authenticated;
+
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'incoming') then
+    alter publication supabase_realtime add table public.incoming;
+  end if;
+end $$;

@@ -860,6 +860,7 @@ async function syncNow() {
   try {
     do { syncAgain = false; await syncOnce(); } while (syncAgain);
     setSync("Disegerak " + jam());
+    setTimeout(importIncoming, 0);
   } catch (e) {
     const m = String((e && e.message) || e);
     setSync(/shared_plans|relation|schema cache/i.test(m) ? "Jadual Supabase belum dikemas kini — jalankan supabase/schema.sql" : "Gagal segerak: " + m);
@@ -871,8 +872,77 @@ function afterAttach() {
   channel = sb.channel("pelan-" + plan.id)
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "shared_plans", filter: "id=eq." + plan.id },
       ev => { if (ev.new && ev.new.version !== plan.version) syncNow(); })
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "incoming", filter: "plan_id=eq." + plan.id }, () => importIncoming())
     .subscribe();
   loadMembers();
+  loadEmailToken();
+}
+
+/* ---------- auto catat duit masuk dari e-mel ---------- */
+let emailTok = null, emailTokLoaded = false, importing = false;
+async function importIncoming() {
+  if (!sb || !sbUser || !plan || importing) return;
+  importing = true;
+  try {
+    const { data, error } = await sb.from("incoming").select("id, amount, tx_date, description").eq("plan_id", plan.id).eq("imported", false).order("id").limit(50);
+    if (error || !data || !data.length) return;
+    let n = 0, total = 0;
+    for (const r of data) {
+      const id = "inc-" + r.id;   // id tetap: telefon lain yang import serentak tidak menggandakan
+      if (S.tx.some(t => t.id === id) || S.trash[id]) continue;
+      const desc = String(r.description || "").trim();
+      S.tx.push({ id, date: r.tx_date, type: "in", cat: /gaji|salary|payroll|upah|elaun/i.test(desc) ? "Gaji" : "Duit masuk", amount: Number(r.amount) || 0, note: (desc ? desc.slice(0, 80) + " · " : "") + "auto e-mel" });
+      n++; total += Number(r.amount) || 0;
+    }
+    await sb.from("incoming").update({ imported: true }).in("id", data.map(r => r.id));
+    if (n) { commit(); toast(`${n} duit masuk dicatat automatik dari e-mel (${RM(total)})`); }
+  } catch {} finally { importing = false; }
+}
+async function loadEmailToken() {
+  if (!plan) return;
+  try { const { data } = await sb.from("plan_tokens").select("token, created_at").eq("plan_id", plan.id).order("created_at", { ascending: false }).limit(1); emailTok = (data && data[0]) || null; } catch { emailTok = null; }
+  emailTokLoaded = true;
+  if (tab === "tetapan") render();
+}
+async function makeEmailToken() {
+  const token = [...crypto.getRandomValues(new Uint8Array(24))].map(x => x.toString(16).padStart(2, "0")).join("");
+  const { error } = await sb.from("plan_tokens").insert({ token, plan_id: plan.id });
+  if (error) return toast(/relation|schema cache|plan_tokens/i.test(error.message) ? "Jalankan semula supabase/schema.sql di Supabase dahulu" : "Gagal: " + error.message);
+  emailTok = { token, created_at: new Date().toISOString() }; render(); toast("Kod sambungan dijana");
+}
+async function revokeEmailToken() {
+  const { error } = await sb.from("plan_tokens").delete().eq("plan_id", plan.id);
+  if (error) return toast("Gagal: " + error.message);
+  emailTok = null; render(); toast("Kod dibatalkan — skrip Gmail lama tidak boleh menghantar lagi");
+}
+async function copyEmailScript() {
+  try {
+    const r = await fetch("google-apps-script/duit-masuk.gs", { cache: "no-store" });
+    if (!r.ok) throw new Error();
+    const code = (await r.text()).replace("__URL__", CFG.supabaseUrl).replace("__KEY__", CFG.supabaseKey).replace("__TOKEN__", emailTok.token);
+    try { await navigator.clipboard.writeText(code); toast("Skrip disalin ✓ — tampal di script.google.com"); }
+    catch { const ta = document.getElementById("gsCode"); if (ta) { ta.value = code; ta.hidden = false; ta.select(); } toast("Pilih semua teks dalam kotak dan salin"); }
+  } catch { toast("Tidak dapat muat skrip — semak sambungan internet"); }
+}
+function vEmailAuto() {
+  if (!sbUser || !plan) return "";
+  const recent = S.tx.filter(t => String(t.id).startsWith("inc-")).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 5);
+  let body;
+  if (!emailTokLoaded) body = `<p class="small muted">Memuatkan…</p>`;
+  else if (!emailTok) body = `<p class="small muted">Bila bank hantar e-mel notifikasi duit masuk, ia dicatat sebagai transaksi <b>Masuk</b> secara automatik. Menggunakan skrip kecil dalam akaun Google anda sendiri — app ini tidak membaca e-mel anda.</p>
+    <button class="primary" data-act="emailtok">Mula sediakan</button>`;
+  else body = `<p class="small"><span class="pill ok">Kod aktif</span> <span class="muted">sejak ${fmtD(String(emailTok.created_at).slice(0, 10))}</span></p>
+    <ol class="small" style="padding-left:18px;margin:.4rem 0">
+      <li>Tekan <b>Salin skrip</b> (kod anda sudah diisi).</li>
+      <li>Buka <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> (log masuk akaun Gmail yang terima e-mel bank) → padam semua teks → tampal → <b>Simpan</b> 💾.</li>
+      <li>Di atas, pilih fungsi <b>pasang</b> → <b>Jalankan</b> → <b>Semak kebenaran</b> → pilih akaun → <i>Advanced</i> → <i>Go to … (unsafe)</i> → <b>Allow</b>.</li>
+      <li>Siap. E-mel duit masuk disemak setiap 5 minit dan muncul di Transaksi dengan nota "auto e-mel".</li>
+    </ol>
+    <div class="row"><button class="primary" data-act="emailcopy">Salin skrip</button><button class="ghost sm" data-act="emailrevoke">Batalkan kod</button></div>
+    <textarea id="gsCode" hidden readonly rows="6" style="margin-top:8px;font:12px monospace"></textarea>
+    <p class="small muted">Pastikan notifikasi e-mel untuk duit masuk diaktifkan dalam app bank anda. Jika bank anda tidak dikesan, ubah senarai <code>PENGIRIM</code> dalam skrip.</p>
+    ${recent.length ? `<h3 style="margin-top:12px">Terkini dicatat automatik</h3><ul class="list">${recent.map(t => `<li style="padding:6px 0"><div class="grow"><div>${esc(t.cat)}</div><div class="small muted">${fmtD(t.date)} · ${esc(t.note)}</div></div><span class="num pos">+${RM(t.amount)}</span></li>`).join("")}</ul>` : ""}`;
+  return `<section class="card"><h2>Auto catat duit masuk (e-mel)</h2>${body}</section>`;
 }
 async function loadMembers() {
   if (!plan) return;
@@ -922,7 +992,7 @@ async function initCloud() {
     const changed = (u && u.id) !== (sbUser && sbUser.id);
     sbUser = u;
     if (changed) {
-      plan = null; members = []; loginErr = "";
+      plan = null; members = []; loginErr = ""; emailTok = null; emailTokLoaded = false;
       if (channel) { sb.removeChannel(channel); channel = null; }
       render(); if (u) setTimeout(syncNow, 0);
     }
@@ -1633,6 +1703,7 @@ function vTrash() {
 function vTetapan() {
   return `
   ${vCloud()}
+  ${vEmailAuto()}
   <section class="card">
     <h2>Profil</h2>
     <form class="add" data-form="settings">
@@ -1888,6 +1959,9 @@ document.addEventListener("click", e => {
       break;
     }
     case "pdf": exportPDF(); break;
+    case "emailtok": makeEmailToken(); break;
+    case "emailcopy": copyEmailScript(); break;
+    case "emailrevoke": if (confirm("Batalkan kod? Skrip Gmail yang sedia ada akan berhenti mencatat.")) revokeEmailToken(); break;
     case "quick": openQuick("out"); break;
     case "xlsx": exportExcel(false); break;
     case "xlsxall": exportExcel(true); break;

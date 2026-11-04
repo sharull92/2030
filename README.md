@@ -24,7 +24,7 @@ App perancangan kewangan dan kerjaya peribadi hingga 31 Disember 2030. Satu fail
 
 ## Ujian
 ```
-node --test tests/calc.test.mjs
+node --test tests/calc.test.mjs tests/emel.test.mjs
 ```
 
 ## Sandaran

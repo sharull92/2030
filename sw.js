@@ -1,7 +1,7 @@
 // Service worker: rangkaian dahulu untuk fail app (sentiasa versi terkini),
 // cache sebagai sandaran apabila luar talian. Permintaan ke domain lain (Supabase, CDN) tidak diganggu.
 // Juga: notifikasi tarikh bayar (semak bila app dibuka + Periodic Background Sync).
-const CACHE = "pelan2030-v5";
+const CACHE = "pelan2030-v6";
 const DATA = "pelan2030-data"; // senarai peringatan dari app + log notifikasi — jangan dipadam
 const ASSETS = ["./", "index.html", "pelan-2030.html", "config.js", "manifest.webmanifest", "icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png"];
 
