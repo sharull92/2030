@@ -65,6 +65,10 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - Repo pengguna `hrsahrulsazly-bit/2030` ada GitHub Action `.github/workflows/segerak.yml` (salinan di `github-sync/segerak.yml`) yang menarik branch ini setiap 15 minit dan commit ke `main` — kecuali `config.js` dan `.github/`. Commit dibuat atas nama `github.actor` (bukan bot) kerana Vercel Hobby tidak deploy commit bot. Vercel deploy daripada `main`. Perubahan pada fail workflow mesti disalin manual oleh pengguna (folder `.github/` dikecualikan).
 - Jadi: cukup push ke branch ini; jangan ubah `config.js` dengan kunci sebenar di sini.
 
+## Guna di telefon
+- Butang terapung ＋ (`#fab`) di semua tab → bottom sheet `#sheet` (`openQuick`/`renderQuick`, keadaan `Q`): Keluar/Masuk, jumlah (papan kekunci nombor, fokus automatik), cip kategori (`quickCats`: bajet + paling kerap 90 hari + lalai), cara bayar (Tunai/kad), nota, tarikh. Simpan guna `recordTx()` — fungsi yang sama dengan borang Kewangan.
+- Pintasan manifest (tekan lama ikon app): `?tambah=keluar` / `?tambah=masuk` buka sheet terus.
+
 ## Format nombor
 - Wang: `RM()` sentiasa 2 tempat perpuluhan (RM 4,782.00), dibundar ke sen. Semua input wang `step="0.01" inputmode="decimal"`.
 - Emas: `fmtG()` hingga 3 tempat perpuluhan (1.025 g); input gram `step="0.001"`.

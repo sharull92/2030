@@ -103,6 +103,22 @@ svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans
 .toast{max-width:calc(100vw - 32px);position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:10px;font-size:.9rem;z-index:20}
 @media (prefers-reduced-motion:no-preference){.bar>i{transition:width .4s ease}}
 #printArea{display:none}
+#fab{position:fixed;right:16px;bottom:calc(78px + env(safe-area-inset-bottom));width:58px;height:58px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:30px;line-height:1;box-shadow:0 6px 18px rgba(0,0,0,.28);z-index:15;padding:0}
+#sheet{position:fixed;inset:0;z-index:30;background:rgba(10,16,24,.55);display:flex;align-items:flex-end;justify-content:center}
+#sheet[hidden]{display:none}
+#sheet .panel{background:var(--card);color:var(--ink);width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:14px 16px calc(16px + env(safe-area-inset-bottom));max-height:92vh;overflow:auto}
+#sheet .grab{width:44px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 10px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--paper);padding:4px;border-radius:12px}
+.seg button{border:0;background:transparent;font-weight:600;padding:10px}
+.seg button[aria-pressed="true"]{background:var(--card);box-shadow:var(--shadow);color:var(--red)}
+.seg button.in[aria-pressed="true"]{color:var(--teal)}
+.amt{font:700 2rem "Bricolage Grotesque",sans-serif;text-align:center;border:0;border-bottom:2px solid var(--line);border-radius:0;background:transparent;padding:10px 4px;margin:10px 0}
+.amt:focus{outline:none;border-bottom-color:var(--red)}
+.amt::-webkit-inner-spin-button,.amt::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.amt{-moz-appearance:textfield}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+.chips button{border-radius:99px;padding:7px 12px;font-size:.88rem}
+.chips button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+@media print{#fab,#sheet{display:none!important}}
 @media print{
   @page{size:A4;margin:14mm 12mm}
   html,body{background:#fff!important;padding:0!important}
@@ -137,6 +153,8 @@ svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans
 <body>
 <main id="app" aria-live="polite"></main>
 <nav class="tabs" aria-label="Navigasi utama" id="nav"></nav>
+<button id="fab" type="button" aria-label="Rekod transaksi baru" data-act="quick">＋</button>
+<div id="sheet" hidden></div>
 <input type="file" id="restoreFile" accept="application/json,.json" hidden>
 
 <script>
@@ -1648,6 +1666,81 @@ const cardName = id => (S.cards.find(c => c.id === id) || { name: "(kad dipadam)
 
 const VIEWS = { ringkasan: vRingkasan, kewangan: vKewangan, hutang: vHutang, pelan: vPelan, niaga: vNiaga, tetapan: vTetapan };
 
+// Rekod satu transaksi (dikongsi oleh borang Kewangan & butang pantas ＋).
+function recordTx(d) {
+  const amount = num(d.amount), cat = String(d.cat || "").trim() || (d.type === "in" ? "Masuk" : "Lain-lain"), note = String(d.note || "").trim();
+  if (d.via && d.type === "out" && S.cards.some(c => c.id === d.via)) {
+    S.cardTx.push({ id: uid(), cardId: d.via, date: d.date, type: "belanja", amount, cat, note });
+    return "Direkod pada kad " + cardName(d.via) + " — belum bayar" + budgetWarn(cat, d.date);
+  }
+  S.tx.push({ id: uid(), date: d.date, type: d.type, cat, amount, note });
+  return (d.type === "in" ? "Duit masuk " : "Duit keluar ") + RM(amount) + " direkod" + (d.type === "out" ? budgetWarn(cat, d.date) : "");
+}
+// Kategori untuk cip: kategori bajet + yang paling kerap digunakan (90 hari) + lalai.
+function quickCats(type) {
+  if (type === "in") return [...new Set([...S.tx.filter(t => t.type === "in").map(t => t.cat), "Gaji", "Sampingan", "Pasif", "Hadiah", "Lain-lain"].filter(Boolean).map(c => String(c).trim()))].slice(0, 8);
+  const since = ymd(new Date(Date.now() - 90 * 864e5)), freq = {};
+  for (const t of [...S.tx.filter(t => t.type === "out" && t.cat !== "Kad kredit"), ...S.cardTx.filter(t => t.type === "belanja")])
+    if (String(t.date) >= since) { const k = String(t.cat || "").trim(); if (k) freq[k] = (freq[k] || 0) + 1; }
+  const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  const seen = new Set(), out = [];
+  for (const c of [...S.budgets.map(b => b.cat), ...top, "Makan", "Minyak", "Barang dapur", "Bil", "Lain-lain"]) { const k = catKey(c); if (c && !seen.has(k)) { seen.add(k); out.push(String(c).trim()); } }
+  return out.slice(0, 10);
+}
+let Q = null; // keadaan butang pantas
+function openQuick(type = "out") {
+  Q = { type, cat: "", via: "", date: ymd(today()) };
+  renderQuick();
+  const a = document.querySelector("#sheet .amt"); if (a) setTimeout(() => a.focus(), 60);
+}
+function closeQuick() { Q = null; const sh = document.getElementById("sheet"); sh.hidden = true; sh.innerHTML = ""; }
+function renderQuick() {
+  const sh = document.getElementById("sheet");
+  if (!Q) return closeQuick();
+  const amtVal = (sh.querySelector(".amt") || {}).value || "", noteVal = (sh.querySelector("[name=qnote]") || {}).value || "";
+  const cats = quickCats(Q.type);
+  sh.innerHTML = `<div class="panel" role="dialog" aria-modal="true" aria-label="Rekod transaksi">
+    <div class="grab"></div>
+    <div class="seg"><button type="button" data-q="type" data-v="out" aria-pressed="${Q.type === "out"}">Duit keluar</button><button type="button" class="in" data-q="type" data-v="in" aria-pressed="${Q.type === "in"}">Duit masuk</button></div>
+    <form id="quickForm">
+      <input class="amt" name="qamt" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="RM 0.00" required value="${esc(amtVal)}" aria-label="Jumlah (RM)">
+      <div class="small muted">Kategori</div>
+      <div class="chips">${cats.map(c => `<button type="button" data-q="cat" data-v="${esc(c)}" aria-pressed="${!!Q.cat && catKey(c) === catKey(Q.cat)}">${esc(c)}</button>`).join("")}</div>
+      <input name="qcat" list="cats" placeholder="atau taip kategori lain" value="${esc(Q.cat)}" aria-label="Kategori">
+      ${Q.type === "out" && S.cards.length ? `<div class="small muted" style="margin-top:10px">Bayar guna</div>
+      <div class="chips"><button type="button" data-q="via" data-v="" aria-pressed="${!Q.via}">Tunai / debit</button>${S.cards.map(c => `<button type="button" data-q="via" data-v="${c.id}" aria-pressed="${Q.via === c.id}">💳 ${esc(c.name)}</button>`).join("")}</div>` : ""}
+      <div class="grid2" style="margin-top:10px">
+        <label>Nota<input name="qnote" value="${esc(noteVal)}" placeholder="pilihan"></label>
+        <label>Tarikh<input name="qdate" type="date" value="${Q.date}" required></label>
+      </div>
+      <div class="row" style="margin-top:14px"><button type="button" data-q="close" style="flex:1">Batal</button><button class="primary" style="flex:2">Simpan</button></div>
+    </form>
+  </div>`;
+  sh.hidden = false;
+}
+document.addEventListener("click", e => {
+  const sh = document.getElementById("sheet");
+  if (!Q) return;
+  if (e.target === sh) return closeQuick();
+  const b = e.target.closest("[data-q]"); if (!b) return;
+  const f = document.getElementById("quickForm");
+  const keep = () => { Q.cat = f.qcat.value; Q.date = f.qdate.value; };
+  if (b.dataset.q === "close") return closeQuick();
+  keep();
+  if (b.dataset.q === "type") { Q.type = b.dataset.v; Q.via = ""; }
+  if (b.dataset.q === "cat") Q.cat = b.dataset.v;
+  if (b.dataset.q === "via") Q.via = b.dataset.v;
+  renderQuick();
+});
+document.addEventListener("submit", e => {
+  if (e.target.id !== "quickForm") return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const f = e.target;
+  const msg = recordTx({ type: Q.type, amount: f.qamt.value, cat: f.qcat.value, note: f.qnote.value, date: f.qdate.value, via: Q.type === "out" ? Q.via : "" });
+  closeQuick(); commit(); toast(msg);
+}, true);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && Q) closeQuick(); });
+
 function render() {
   if (!VIEWS[tab]) tab = "ringkasan";
   document.getElementById("app").innerHTML = VIEWS[tab]();
@@ -1696,16 +1789,12 @@ document.addEventListener("submit", e => {
   }
   switch (f.dataset.form) {
     case "income": S.incomes.push({ id: uid(), name: d.name.trim(), type: d.type, amount: num(d.amount) }); break;
-    case "tx":
-      if (d.via && d.type === "out" && S.cards.some(c => c.id === d.via)) {
-        S.cardTx.push({ id: uid(), cardId: d.via, date: d.date, type: "belanja", amount: num(d.amount), cat: d.cat.trim(), note: d.note.trim() });
-        toast("Direkod pada kad " + cardName(d.via) + " — belum bayar" + budgetWarn(d.cat, d.date));
-      } else {
-        S.tx.push({ id: uid(), date: d.date, type: d.type, cat: d.cat.trim(), amount: num(d.amount), note: d.note.trim() });
-        if (d.type === "out") { const w = budgetWarn(d.cat, d.date); if (w) toast("Direkod" + w); }
-      }
+    case "tx": {
+      const msg = recordTx(d);
+      if (d.via || / · /.test(msg)) toast(msg);
       if (txMonth) txMonth = d.date.slice(0, 7);
       break;
+    }
     case "deposit": {
       const kind = f.dataset.kind || d.kind;
       const out = d.dir === "out";
@@ -1799,6 +1888,7 @@ document.addEventListener("click", e => {
       break;
     }
     case "pdf": exportPDF(); break;
+    case "quick": openQuick("out"); break;
     case "xlsx": exportExcel(false); break;
     case "xlsxall": exportExcel(true); break;
     case "budgetquick": if (!S.budgets.some(x => catKey(x.cat) === catKey(b.dataset.cat))) { S.budgets.push({ id: uid(), cat: b.dataset.cat, amount: num(b.dataset.amt) }); commit(); toast("Bajet " + b.dataset.cat + " ditetapkan " + RM(num(b.dataset.amt)) + " — ubah jika perlu"); } break;
@@ -1858,6 +1948,8 @@ document.addEventListener("change", e => {
 window.addEventListener("storage", e => { if (e.key === KEY) { S = load(); render(); } });
 render();
 initCloud();
+{ const q = new URLSearchParams(location.search).get("tambah");
+  if (q === "keluar" || q === "masuk") { openQuick(q === "masuk" ? "in" : "out"); history.replaceState(null, "", location.pathname); } }
 syncReminders();
 if (S.settings.notify) registerPeriodic();
 
