@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -275,4 +275,17 @@ test("yearSummary: tapis tahun; pendapatan ikut bulan direkod", () => {
   assert.equal(sem.spent, 150 + 72 + 60 + 30);
   assert.equal(sem.income, 4782 + 5000 + 4782 + 4782);
   assert.equal(sem.pending, 900);
+});
+
+test("trend: tapis tahun dan bulan terakhir; keluar termasuk belanja kad", () => {
+  const t = new Date(2026, 10, 10);
+  assert.deepEqual(L.trendMonths("6", t), ["2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"]);
+  assert.equal(L.trendMonths("12", t)[0], "2025-12");
+  const y = L.trendMonths("2027", t);
+  assert.equal(y.length, 12); assert.equal(y[0], "2027-01"); assert.equal(y[11], "2027-12");
+  const S = L.normalize({
+    tx: [{ date: "2026-11-01", type: "out", cat: "U-MOBILE", amount: 72 }, { date: "2026-11-06", type: "out", cat: "Kad kredit", amount: 500 }, { date: "2026-11-25", type: "in", cat: "Gaji", amount: 4782 }],
+    cardTx: [{ cardId: "k", date: "2026-11-03", type: "belanja", amount: 60 }, { cardId: "k", date: "2026-11-01", type: "awal", amount: 999 }]
+  });
+  assert.deepEqual(L.monthFlow(S, "2026-11"), { m: "2026-11", in: 4782, out: 132 });
 });

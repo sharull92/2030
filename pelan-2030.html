@@ -311,6 +311,25 @@ function yearSummary(S, year, today) {
   return { income, spent, pending, balance: income - spent - pending, byCat, months: months.size, received: sum(txIn, t => t.amount) };
 }
 
+// Aliran sebulan, sama definisi dengan ringkasan: masuk = transaksi Masuk; keluar = transaksi Keluar
+// (kecuali bayaran bil kad) + belanja kad kredit.
+function monthFlow(S, m) {
+  const inM = t => String(t.date).slice(0, 7) === m;
+  return {
+    m,
+    in: sum(S.tx.filter(t => t.type === "in" && inM(t)), t => t.amount),
+    out: sum(S.tx.filter(t => t.type === "out" && inM(t) && t.cat !== "Kad kredit"), t => t.amount)
+       + sum(S.cardTx.filter(t => t.type === "belanja" && inM(t)), t => t.amount)
+  };
+}
+// sel: "6" / "12" = bulan terakhir; "2027" = Jan–Dis tahun itu.
+function trendMonths(sel, today) {
+  if (/^\d{4}$/.test(String(sel))) return Array.from({ length: 12 }, (_, i) => sel + "-" + String(i + 1).padStart(2, "0"));
+  const n = Number(sel) || 6, out = [];
+  for (let i = n - 1; i >= 0; i--) out.push(ym(new Date(today.getFullYear(), today.getMonth() - i, 1)));
+  return out;
+}
+
 // Item bayaran berulang (komitmen, hutang aktif, kad dengan baki) untuk kalendar.
 function billItems(S, today) {
   return [
@@ -407,7 +426,7 @@ const today = () => new Date();
 let S = load();
 let tab = (() => { try { return localStorage.getItem(KEY + ":tab") || "ringkasan"; } catch { return "ringkasan"; } })();
 let txMonth = ym(today());
-let trendN = 6;
+let trendSel = "6";
 let sumYear = new Date().getFullYear();
 
 function load() {
@@ -680,6 +699,7 @@ function nextSteps(c) {
 function vRingkasan() {
   const c = calc(S), t = today();
   const ys = yearSummary(S, sumYear, t);
+  const tdata = trendMonths(trendSel, t).map(m => monthFlow(S, m));
   const years = [...new Set([2026, 2027, 2028, 2029, 2030, t.getFullYear(), ...S.tx.map(x => +String(x.date).slice(0, 4)), ...S.cardTx.map(x => +String(x.date).slice(0, 4))])].filter(y => y > 2000).sort();
   const days = Math.max(0, Math.ceil((END - t) / 86400000));
   const yr = t.getFullYear();
@@ -728,8 +748,13 @@ function vRingkasan() {
 
   <section class="card">
     <div class="row between"><h2>Trend</h2>
-      <div class="row"><button class="sm" data-act="trend" data-n="6" aria-pressed="${trendN === 6}">6 bln</button><button class="sm" data-act="trend" data-n="12" aria-pressed="${trendN === 12}">12 bln</button></div></div>
-    ${chart(trend(S.tx, t, trendN))}
+      <select data-act="trendsel" aria-label="Tempoh trend" style="width:auto">
+        <option value="6" ${trendSel === "6" ? "selected" : ""}>6 bulan terakhir</option>
+        <option value="12" ${trendSel === "12" ? "selected" : ""}>12 bulan terakhir</option>
+        ${years.map(y => `<option value="${y}" ${trendSel === String(y) ? "selected" : ""}>Tahun ${y}</option>`).join("")}
+      </select></div>
+    ${chart(tdata)}
+    <p class="small muted" style="margin:.4rem 0 0">Jumlah: masuk ${RM(sum(tdata, d => d.in))} · keluar ${RM(sum(tdata, d => d.out))}</p>
   </section>
 
   <section class="card">
@@ -1207,7 +1232,6 @@ document.addEventListener("click", e => {
       if (b.dataset.kind === "hutang") { const d = S.debts.find(x => x.id === id); if (d) d.balance = Math.max(0, num(d.balance) - amt); }
       toast("Direkod sebagai transaksi"); commit(); break;
     }
-    case "trend": trendN = num(b.dataset.n); render(); break;
     case "goaltpl": {
       const have = new Set(S.goals.map(g => g.title));
       GOAL_TPL.forEach(([year, area, title]) => { if (!have.has(title)) S.goals.push({ id: uid(), year, area, title, done: false }); });
@@ -1248,6 +1272,7 @@ document.addEventListener("change", e => {
   const act = el.dataset.act; if (!act) return;
   if (act === "txmonth") { txMonth = el.value; render(); }
   if (act === "sumyear") { sumYear = num(el.value); render(); }
+  if (act === "trendsel") { trendSel = el.value; render(); }
   if (act === "cardmonth") { cardMonth = el.value; render(); }
   if (act === "notifydays") { S.settings.notifyDays = num(el.value); commit(); }
   if (act === "cardfilter") { cardFilter = el.value; render(); }
