@@ -97,7 +97,9 @@ nav.tabs button[aria-current="page"]{color:var(--red);font-weight:600}
 .stages span.on{background:var(--teal);color:#fff}
 details summary{cursor:pointer;font-weight:600}
 svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans-serif}
-.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:10px;font-size:.9rem;z-index:20}
+.toast.undo{display:flex;gap:14px;align-items:center;padding:6px 6px 6px 14px;white-space:nowrap}
+.toast.undo button{background:transparent;border:1px solid currentColor;color:var(--paper);font-weight:700;padding:5px 12px}
+.toast{max-width:calc(100vw - 32px);position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:10px;font-size:.9rem;z-index:20}
 @media (prefers-reduced-motion:no-preference){.bar>i{transition:width .4s ease}}
 </style>
 </head>
@@ -109,12 +111,13 @@ svg.chart text{fill:var(--muted);font-size:10px;font-family:"IBM Plex Sans",sans
 <script>
 // @logic-start — fungsi tulen (diuji dalam tests/calc.test.mjs)
 const DEFAULTS = () => ({
-  v: 4,
+  v: 5,
   updatedAt: 0,
   settings: { name: "", targetPassive: 3000, emergencyMonths: 6, notify: false, notifyDays: 3 },
   savings: 0,
   incomes: [], commitments: [], debts: [], tx: [], goals: [], ventures: [],
   cards: [], cardTx: [],
+  trash: {},   // v5: item dipadam { id: { list, item, at, cardTx?, ventureId?, index? } } — disimpan 30 hari
   paid: {},
   gold: { have: 0, target: 30, price: 0, by: "2028-12" },
   asb: { have: 0, s1: 15000, s1by: "2027-12" },       // dana kecemasan stage 1
@@ -141,6 +144,9 @@ function normalize(d) {
   if (o.v < 3) o.v = 3;
   // v3 → v4: dana kecemasan = Stage 1 ASB + Stage 2 Tabung Haji. Medan lama asb.s2/s2by dikekalkan (tidak dipadam).
   if (o.v < 4) { if (!d.th && d.asb && d.asb.s2by) o.th.by = d.asb.s2by; o.v = 4; }
+  // v4 → v5: tong sampah
+  if (!o.trash || typeof o.trash !== "object" || Array.isArray(o.trash)) o.trash = {};
+  if (o.v < 5) o.v = 5;
   o.updatedAt = Number(o.updatedAt) || 0;
   return o;
 }
@@ -327,6 +333,73 @@ function trendMonths(sel, today) {
   return out;
 }
 
+// ---------- tong sampah & pulih ----------
+const LISTS = ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx"];
+const LIST_LABEL = { incomes: "Pendapatan", commitments: "Komitmen", debts: "Hutang", tx: "Transaksi", goals: "Matlamat", ventures: "Projek niaga", cards: "Kad kredit", cardTx: "Rekod kad", steps: "Langkah projek" };
+function purgeTrash(S, now, days = 30) {
+  for (const [k, e] of Object.entries(S.trash)) if (!e || now - (Number(e.at) || 0) > days * 864e5) delete S.trash[k];
+}
+// Alih item ke tong sampah (kad: rekod penggunaannya ikut sekali).
+function trashItem(S, list, id, now) {
+  const item = (S[list] || []).find(x => x.id === id);
+  if (!item) return null;
+  S[list] = S[list].filter(x => x.id !== id);
+  const e = { list, item, at: now };
+  if (list === "cards") { e.cardTx = S.cardTx.filter(x => x.cardId === id); S.cardTx = S.cardTx.filter(x => x.cardId !== id); }
+  S.trash[id] = e;
+  purgeTrash(S, now);
+  return e;
+}
+function trashStep(S, ventureId, index, key, now) {
+  const v = S.ventures.find(x => x.id === ventureId);
+  if (!v || !v.steps[index]) return null;
+  const [item] = v.steps.splice(index, 1);
+  S.trash[key] = { list: "steps", item, ventureId, index, at: now, ventureName: v.name };
+  purgeTrash(S, now);
+  return S.trash[key];
+}
+function restoreItem(S, id) {
+  const e = S.trash[id];
+  if (!e) return false;
+  if (e.list === "steps") {
+    const v = S.ventures.find(x => x.id === e.ventureId);
+    if (!v) return false;
+    v.steps.splice(Math.min(Number(e.index) || 0, v.steps.length), 0, e.item);
+  } else {
+    if (!S[e.list].some(x => x.id === id)) S[e.list].push(e.item);
+    for (const t of e.cardTx || []) if (!S.cardTx.some(x => x.id === t.id)) S.cardTx.push(t);
+  }
+  delete S.trash[id];
+  return true;
+}
+// Cari item dalam salinan lama yang tiada lagi sekarang (dan bukan dalam tong sampah).
+function findLost(S, snapshots) {
+  const have = new Set(LISTS.flatMap(k => S[k].map(x => x.id)));
+  const out = {};
+  for (const snap of snapshots) {
+    let d; try { d = normalize(snap.data); } catch { continue; }
+    for (const k of LISTS) for (const it of d[k]) {
+      if (it && it.id != null && !have.has(it.id) && !S.trash[it.id] && !out[it.id]) out[it.id] = { list: k, item: it, source: snap.label };
+    }
+  }
+  return Object.values(out);
+}
+function describeItem(list, it) {
+  const rm = n => "RM" + Math.round(Number(n) || 0).toLocaleString("ms-MY");
+  switch (list) {
+    case "incomes": return `${it.name} · ${rm(it.amount)}/bln`;
+    case "commitments": return `${it.name} · ${rm(it.amount)} (hari ${it.day || "—"})`;
+    case "debts": return `${it.name} · baki ${rm(it.balance)}`;
+    case "tx": return `${it.type === "in" ? "Masuk" : "Keluar"} ${it.cat}${it.note ? " (" + it.note + ")" : ""} · ${rm(it.amount)} · ${it.date}`;
+    case "cardTx": return `${it.cat || "Kad"}${it.note ? " (" + it.note + ")" : ""} · ${rm(it.amount)} · ${it.date}`;
+    case "goals": return `${it.year}: ${it.title}`;
+    case "ventures": return it.name;
+    case "cards": return `${it.name} · had ${rm(it.limit)}`;
+    case "steps": return it.t;
+    default: return String(it.name || it.title || it.id);
+  }
+}
+
 // Item bayaran berulang (komitmen, hutang aktif, kad dengan baki) untuk kalendar.
 function billItems(S, today) {
   return [
@@ -399,7 +472,7 @@ function mergePlan(base, local, remote) {
   m.updatedAt = Math.max(Number(local.updatedAt) || 0, Number(remote.updatedAt) || 0);
   return m;
 }
-const planIsEmpty = S => ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx"].every(k => !S[k].length);
+const planIsEmpty = S => LISTS.every(k => !S[k].length);
 // @logic-end
 </script>
 
@@ -639,6 +712,14 @@ async function initCloud() {
 function toast(msg) {
   const el = document.createElement("div"); el.className = "toast"; el.role = "status"; el.textContent = msg;
   document.body.appendChild(el); setTimeout(() => el.remove(), 2200);
+}
+function toastUndo(msg, onUndo) {
+  document.querySelectorAll(".toast").forEach(x => x.remove());
+  const el = document.createElement("div"); el.className = "toast undo"; el.role = "status";
+  el.innerHTML = `<span></span><button type="button">Undo</button>`;
+  el.firstChild.textContent = msg;
+  el.querySelector("button").onclick = () => { el.remove(); onUndo(); };
+  document.body.appendChild(el); setTimeout(() => el.remove(), 8000);
 }
 
 /* ---------- ikon ---------- */
@@ -1102,6 +1183,36 @@ function vCloud() {
   return `<section class="card"><h2>Penyegerakan awan</h2>${body}</section>`;
 }
 
+let lostFound = [], lostScanned = false, lostScanning = false;
+async function scanLost() {
+  lostScanning = true; render();
+  const snaps = [];
+  try { const b = localStorage.getItem(KEY + ":sandaran-sebelum-kongsi"); if (b) snaps.push({ label: "salinan telefon ini sebelum log masuk", data: JSON.parse(b) }); } catch {}
+  if (sb && sbUser) {
+    try { const { data } = await sb.from("plans").select("data").eq("user_id", sbUser.id).maybeSingle(); if (data && data.data) snaps.push({ label: "salinan awan lama", data: data.data }); } catch {}
+    if (plan) {
+      try {
+        const { data } = await sb.from("plan_history").select("data, saved_at").eq("plan_id", plan.id).order("id", { ascending: false }).limit(100);
+        for (const h of data || []) snaps.push({ label: "sejarah awan " + new Date(h.saved_at).toLocaleString("ms-MY", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }), data: h.data });
+      } catch {}
+    }
+  }
+  lostFound = findLost(S, snaps); lostScanned = true; lostScanning = false; render();
+}
+function vTrash() {
+  const items = Object.entries(S.trash).sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
+  const fmtAt = ms => new Date(ms).toLocaleString("ms-MY", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return `<section class="card" id="tongSampah">
+    <div class="row between"><h2>Item terpadam</h2>${items.length ? `<button class="ghost sm" data-act="emptytrash">Kosongkan</button>` : ""}</div>
+    <p class="small muted">Item yang dipadam disimpan di sini selama 30 hari dan boleh dipulihkan.</p>
+    ${items.length ? `<ul class="list">${items.map(([k, e]) => `<li><div class="grow"><div>${esc(describeItem(e.list, e.item))}</div><div class="small muted">${LIST_LABEL[e.list] || e.list}${e.ventureName ? " · " + esc(e.ventureName) : ""}${e.cardTx && e.cardTx.length ? ` · +${e.cardTx.length} rekod` : ""} · dipadam ${fmtAt(e.at)}</div></div><button class="sm" data-act="restore1" data-id="${esc(k)}">Pulihkan</button></li>`).join("")}</ul>` : `<p class="empty">Tiada item dalam tong sampah.</p>`}
+    <h3 style="margin-top:14px">Item terpadam sebelum ciri ini wujud?</h3>
+    <p class="small muted">Cari dalam salinan lama (salinan telefon ini, data awan lama dan sejarah awan).</p>
+    <button data-act="scanlost" ${lostScanning ? "disabled" : ""}>${lostScanning ? "Mencari…" : "Cari item terpadam"}</button>
+    ${lostScanned ? (lostFound.length ? `<ul class="list" style="margin-top:8px">${lostFound.map(f => `<li><div class="grow"><div>${esc(describeItem(f.list, f.item))}</div><div class="small muted">${LIST_LABEL[f.list]} · dari ${esc(f.source)}</div></div><button class="sm" data-act="restorelost" data-id="${esc(String(f.item.id))}">Pulihkan</button></li>`).join("")}</ul>` : `<p class="small muted" style="margin-top:8px">Tiada item terpadam dijumpai dalam salinan lama.</p>`) : ""}
+  </section>`;
+}
+
 function vTetapan() {
   return `
   ${vCloud()}
@@ -1115,6 +1226,7 @@ function vTetapan() {
   </section>
   ${vNotify()}
   ${vInstall()}
+  ${vTrash()}
   <section class="card">
     <h2>Sandaran</h2>
     <p class="small muted">Data disimpan dalam pelayar ini sahaja. Muat turun sandaran secara berkala.</p>
@@ -1216,9 +1328,11 @@ document.addEventListener("click", e => {
   const { act, id } = b.dataset;
   switch (act) {
     case "del": if (confirm(b.dataset.list === "cards" ? "Padam kad ini dan semua rekod penggunaannya?" : "Padam item ini?")) {
-      S[b.dataset.list] = S[b.dataset.list].filter(x => x.id !== id);
-      if (b.dataset.list === "cards") S.cardTx = S.cardTx.filter(x => x.cardId !== id);
-      commit();
+      const list = b.dataset.list;
+      if (trashItem(S, list, id, Date.now())) {
+        commit();
+        toastUndo(`${LIST_LABEL[list] || "Item"} dipadam`, () => { if (restoreItem(S, id)) { commit(); toast("Dipulihkan"); } });
+      }
     } break;
     case "pay": {
       S.paid[b.dataset.key] = true;
@@ -1236,7 +1350,22 @@ document.addEventListener("click", e => {
     }
     case "venturetpl": { const [name, kind, target] = VENTURE_TPL[num(b.dataset.i)]; S.ventures.push({ id: uid(), name, kind, target, stage: 0, steps: VENTURE_STEPS.map(t => ({ t, done: false })) }); commit(); break; }
     case "stage": { const v = S.ventures.find(x => x.id === id); if (v) { v.stage = Math.max(0, Math.min(4, v.stage + num(b.dataset.d))); commit(); } break; }
-    case "delstep": { const v = S.ventures.find(x => x.id === id); if (v) { v.steps.splice(num(b.dataset.i), 1); commit(); } break; }
+    case "delstep": {
+      const key = "step-" + uid();
+      if (trashStep(S, id, num(b.dataset.i), key, Date.now())) {
+        commit();
+        toastUndo("Langkah dipadam", () => { if (restoreItem(S, key)) { commit(); toast("Dipulihkan"); } });
+      }
+      break;
+    }
+    case "restore1": if (restoreItem(S, id)) { commit(); toast("Dipulihkan"); } break;
+    case "emptytrash": if (confirm("Kosongkan tong sampah? Item di dalamnya tidak boleh dipulihkan lagi.")) { S.trash = {}; commit(); } break;
+    case "scanlost": scanLost(); break;
+    case "restorelost": {
+      const f = lostFound.find(x => String(x.item.id) === id);
+      if (f && !S[f.list].some(x => x.id === f.item.id)) { S[f.list].push(f.item); lostFound = lostFound.filter(x => x !== f); commit(); toast("Dipulihkan: " + describeItem(f.list, f.item)); }
+      break;
+    }
     case "backup": {
       const blob = new Blob([JSON.stringify(S, null, 2)], { type: "application/json" });
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `pelan2030-sandaran-${ymd(today())}.json`;
@@ -1252,7 +1381,7 @@ document.addEventListener("click", e => {
     case "ics": downloadICS(); break;
     case "install": if (installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; render(); }); } break;
     case "logout": sb.auth.signOut().then(() => { sbUser = null; plan = null; members = []; if (channel) { sb.removeChannel(channel); channel = null; } setSync(""); render(); toast("Telah log keluar. Data kekal dalam peranti ini."); }); break;
-    case "wipe": if (confirm(sbUser ? "Padam SEMUA data, termasuk di awan (semua ahli pelan dikongsi akan terkesan)? Tindakan ini tidak boleh diundur." : "Padam SEMUA data? Tindakan ini tidak boleh diundur.") && confirm("Pasti? Muat turun sandaran dahulu jika perlu.")) { S = normalize(null); commit(); toast("Semua data dipadam"); } break;
+    case "wipe": if (confirm(sbUser ? "Padam SEMUA data, termasuk di awan (semua ahli pelan dikongsi akan terkesan)? Tindakan ini tidak boleh diundur." : "Padam SEMUA data? Tindakan ini tidak boleh diundur.") && confirm("Pasti? Muat turun sandaran dahulu jika perlu.")) { const snap = JSON.parse(JSON.stringify(S)); S = normalize(null); commit(); toastUndo("Semua data dipadam", () => { S = normalize(snap); commit(); toast("Semua data dipulihkan"); }); } break;
   }
 });
 

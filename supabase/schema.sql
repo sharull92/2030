@@ -105,3 +105,51 @@ do $$ begin
     alter publication supabase_realtime add table public.shared_plans;
   end if;
 end $$;
+
+-- =====================================================================
+-- SEJARAH PELAN: salinan lama disimpan secara automatik supaya data yang
+-- terpadam boleh dicari semula (Tetapan → Item terpadam → Cari item terpadam).
+-- Salinan diambil jika ada item dipadam, atau jika salinan terakhir > 5 minit.
+-- 300 salinan terbaru bagi setiap pelan disimpan.
+-- =====================================================================
+create table if not exists public.plan_history (
+  id       bigserial primary key,
+  plan_id  uuid not null references public.shared_plans (id) on delete cascade,
+  data     jsonb not null,
+  version  bigint,
+  saved_at timestamptz not null default now()
+);
+create index if not exists plan_history_plan_idx on public.plan_history (plan_id, id desc);
+
+create or replace function public.plan_item_count(d jsonb) returns int
+language sql immutable set search_path = '' as $$
+  select coalesce(sum(case when jsonb_typeof(d -> k) = 'array' then jsonb_array_length(d -> k) else 0 end), 0)::int
+  from unnest(array['incomes','commitments','debts','tx','goals','ventures','cards','cardTx']) as k;
+$$;
+
+create or replace function public.save_plan_history() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if old.data is distinct from new.data and (
+       public.plan_item_count(new.data) < public.plan_item_count(old.data)
+       or not exists (select 1 from public.plan_history h
+                      where h.plan_id = old.id and h.saved_at > now() - interval '5 minutes')) then
+    insert into public.plan_history (plan_id, data, version) values (old.id, old.data, old.version);
+    delete from public.plan_history h
+     where h.plan_id = old.id
+       and h.id < (select min(x.id) from (select id from public.plan_history
+                                           where plan_id = old.id order by id desc limit 300) x);
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_plan_history on public.shared_plans;
+create trigger trg_plan_history before update on public.shared_plans
+  for each row execute function public.save_plan_history();
+
+alter table public.plan_history enable row level security;
+drop policy if exists "ph_select" on public.plan_history;
+create policy "ph_select" on public.plan_history for select to authenticated using (public.can_access_plan(plan_id));
+revoke all on public.plan_history from anon, authenticated;
+grant select on public.plan_history to authenticated;
+revoke all on function public.save_plan_history() from public, anon, authenticated;

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -73,7 +73,7 @@ test("normalize kekalkan data lama dan isi lalai", () => {
   assert.equal(o.gold.have, 5);
   assert.equal(o.gold.target, 30);
   assert.deepEqual(o.tx, []);
-  assert.equal(o.v, 4);
+  assert.equal(o.v, 5);
   assert.deepEqual(o.cards, []);
   assert.deepEqual(o.cardTx, []);
   assert.equal(o.updatedAt, 0);
@@ -119,7 +119,7 @@ test("upcoming: kad kredit dengan baki muncul, tanpa baki tidak", () => {
 
 test("normalize: data v2 dinaik taraf ke v3 tanpa hilang data", () => {
   const o = L.normalize({ v: 2, updatedAt: 5, incomes: [{ id: "a", amount: 1 }] });
-  assert.equal(o.v, 4);
+  assert.equal(o.v, 5);
   assert.equal(o.updatedAt, 5);
   assert.equal(o.incomes.length, 1);
 });
@@ -163,7 +163,7 @@ test("dana kecemasan: stage 1 ASB → stage 2 Tabung Haji", () => {
 
 test("migrasi v3 → v4: data ASB lama dikekalkan, tarikh stage 2 dibawa ke Tabung Haji", () => {
   const o = L.normalize({ v: 3, asb: { have: 7000, s1: 15000, s2: 30000, s1by: "2027-06", s2by: "2029-12" }, savings: 2000 });
-  assert.equal(o.v, 4);
+  assert.equal(o.v, 5);
   assert.equal(o.asb.have, 7000);
   assert.equal(o.asb.s1by, "2027-06");
   assert.equal(o.asb.s2, 30000);
@@ -292,4 +292,47 @@ test("trend: tapis tahun dan bulan terakhir; keluar termasuk belanja kad", () =>
     cardTx: [{ cardId: "k", date: "2026-11-03", type: "belanja", amount: 60 }, { cardId: "k", date: "2026-11-01", type: "awal", amount: 999 }]
   });
   assert.deepEqual(L.monthFlow(S, "2026-11"), { m: "2026-11", in: 4782, out: 132 });
+});
+
+test("tong sampah: padam → pulih (kad bersama rekodnya, langkah projek)", () => {
+  const S = L.normalize({
+    tx: [{ id: "t1", cat: "Makan", amount: 10 }, { id: "t2", cat: "Minyak", amount: 50 }],
+    cards: [{ id: "k", name: "Visa" }], cardTx: [{ id: "c1", cardId: "k", amount: 5 }, { id: "c2", cardId: "x", amount: 7 }],
+    ventures: [{ id: "v", name: "Projek", steps: [{ t: "A" }, { t: "B" }, { t: "C" }] }]
+  });
+  L.trashItem(S, "tx", "t2", 1000);
+  assert.deepEqual(S.tx.map(x => x.id), ["t1"]);
+  assert.ok(S.trash.t2);
+  assert.ok(L.restoreItem(S, "t2"));
+  assert.deepEqual(S.tx.map(x => x.id).sort(), ["t1", "t2"]);
+  assert.equal(S.trash.t2, undefined);
+  L.trashItem(S, "cards", "k", 1000);
+  assert.deepEqual(S.cardTx.map(x => x.id), ["c2"]);
+  L.restoreItem(S, "k");
+  assert.deepEqual(S.cards.map(x => x.id), ["k"]); assert.deepEqual(S.cardTx.map(x => x.id).sort(), ["c1", "c2"]);
+  L.trashStep(S, "v", 1, "s1", 1000);
+  assert.deepEqual(S.ventures[0].steps.map(x => x.t), ["A", "C"]);
+  L.restoreItem(S, "s1");
+  assert.deepEqual(S.ventures[0].steps.map(x => x.t), ["A", "B", "C"]);
+  assert.equal(L.restoreItem(S, "tiada"), false);
+});
+
+test("tong sampah: dibuang selepas 30 hari; data v4 dapat trash kosong", () => {
+  const S = L.normalize({ v: 4, tx: [{ id: "a" }, { id: "b" }] });
+  assert.equal(S.v, 5); assert.deepEqual(S.trash, {});
+  L.trashItem(S, "tx", "a", 0);
+  L.trashItem(S, "tx", "b", 31 * 864e5);   // purge berlaku semasa padam kedua
+  assert.deepEqual(Object.keys(S.trash), ["b"]);
+});
+
+test("findLost: cari item yang hilang dalam salinan lama", () => {
+  const S = L.normalize({ tx: [{ id: "ada" }], goals: [{ id: "g1" }], trash: { dlmTong: { list: "tx", item: { id: "dlmTong" }, at: 1 } } });
+  const lost = L.findLost(S, [
+    { label: "lama", data: { tx: [{ id: "ada" }, { id: "hilang1" }, { id: "dlmTong" }], debts: [{ id: "hilang2", name: "PTPTN" }] } },
+    { label: "lebih lama", data: { tx: [{ id: "hilang1" }, { id: "hilang3" }] } }
+  ]);
+  assert.deepEqual(lost.map(x => x.item.id).sort(), ["hilang1", "hilang2", "hilang3"]);
+  const by = Object.fromEntries(lost.map(x => [x.item.id, x]));
+  assert.equal(by.hilang1.source, "lama");          // salinan pertama diutamakan
+  assert.equal(by.hilang2.list, "debts");
 });

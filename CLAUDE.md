@@ -14,12 +14,12 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 3. **Hutang/Kad** — kad kredit (had, baki, % penggunaan <30% sihat, belanja bulan ikut kategori, bayaran minimum ≈5%/RM50, rekod belanja & bayaran; bayaran kad juga direkod dalam `tx`); komitmen bulanan (tarikh bayar); hutang disusun ikut faedah tertinggi (avalanche) dengan anggaran tarikh selesai.
 4. **Pelan 2030** — matlamat ikut tahun, templat cadangan (TTT → HRD Corp → modul pematuhan → app AI → pasif).
 5. **Niaga** — projek dengan peringkat Idea → Validasi → Bina → Lancar → Skala + senarai langkah proses; templat idea.
-6. **Tetapan** — nama, sasaran pasif; notifikasi tarikh bayar (N hari sebelum); eksport kalendar .ics; pasang app; penyegerakan awan; sandaran/pulih JSON, padam semua.
+6. **Tetapan** — penyegerakan awan (atas); nama, sasaran pasif; **Item terpadam** (tong sampah 30 hari + "Cari item terpadam" dalam salinan lama: sandaran-sebelum-kongsi, jadual `plans` lama, `plan_history`); notifikasi tarikh bayar (N hari sebelum); eksport kalendar .ics; pasang app; penyegerakan awan; sandaran/pulih JSON, padam semua.
 
 ## Model data (satu objek `S`)
 ```js
 {
-  v: 4,
+  v: 5,
   updatedAt: Number,   // ms, untuk penyegerakan awan (v2)
   settings: { name, targetPassive, emergencyMonths, notify, notifyDays },
   savings: Number,
@@ -31,6 +31,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
   ventures:    [{ id, name, kind, target, stage: 0-4, steps: [{ t, done }] }],
   cards:       [{ id, name, limit, dueDay, rate }],                       // v3
   cardTx:      [{ id, cardId, date, type: "belanja"|"bayar"|"awal", amount, cat, note }],  // v3
+  trash:       { "<id>": { list, item, at, cardTx?, ventureId?, index? } },  // v5: tong sampah 30 hari
   paid:        { "<itemId>:<YYYY-MM>": true },   // peringatan yang sudah dibayar
   gold: { have, target: 30, price, by: "YYYY-MM" },
   asb:  { have, s1: 15000, s1by },            // dana kecemasan stage 1 (ASB); asb.s2/s2by lama dikekalkan tetapi tidak digunakan
@@ -38,6 +39,10 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 }
 ```
 `normalize()` menggabungkan data lama dengan nilai lalai — kekalkan apabila menambah medan baru.
+
+## Padam & pulih
+- Semua padam (`del`, `delstep`) melalui `trashItem` / `trashStep` → `S.trash` (kad bawa rekod `cardTx`nya). `toastUndo()` 8 s; `restoreItem()`. "Padam semua" ada Undo (salinan penuh). Tong sampah disegerak antara telefon (objek ber-id → `merge3`).
+- Supabase `plan_history`: trigger `save_plan_history` simpan salinan lama bila item berkurang (padam) atau salinan terakhir > 5 minit; 300 terbaru/pelan; hanya boleh dibaca (RLS `can_access_plan`).
 
 ## Storan — PENTING
 - Utama: `localStorage` (kunci `pelan2030`) — app berfungsi luar talian tanpa akaun.
