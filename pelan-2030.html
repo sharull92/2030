@@ -44,7 +44,8 @@ h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;line-height:1.15
 h1{font-size:1.6rem} h2{font-size:1.2rem} h3{font-size:1rem}
 main{max-width:760px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px 16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:0 0 14px;box-shadow:var(--shadow)}
-.muted{color:var(--muted)} .small{font-size:.85rem}
+.muted{color:var(--muted)}
+.num.muted{color:var(--muted)} .small{font-size:.85rem}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .between{justify-content:space-between}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -331,6 +332,34 @@ function trendMonths(sel, today) {
   const n = Number(sel) || 6, out = [];
   for (let i = n - 1; i >= 0; i--) out.push(ym(new Date(today.getFullYear(), today.getMonth() - i, 1)));
   return out;
+}
+
+// Status bayaran setiap belanja kad: bayaran kad menutup belanja paling lama dahulu (FIFO).
+function cardAlloc(S, cardId) {
+  const rows = S.cardTx.filter(t => t.cardId === cardId);
+  let pay = sum(rows.filter(t => t.type === "bayar"), t => t.amount);
+  const debits = rows.filter(t => t.type === "belanja" || t.type === "awal")
+    .map((t, i) => [t, i]).sort((a, b) => String(a[0].date).localeCompare(String(b[0].date)) || a[1] - b[1]).map(x => x[0]);
+  const out = {};
+  for (const t of debits) {
+    const amt = Number(t.amount) || 0, covered = Math.min(amt, pay);
+    pay -= covered;
+    const owed = Math.round((amt - covered) * 100) / 100;
+    out[t.id] = { covered, owed, status: owed <= 0 ? "dibayar" : covered > 0 ? "separa" : "belum" };
+  }
+  return out;
+}
+// Tarikh akhir bayaran kad yang seterusnya (hari ini atau selepas).
+function nextDue(dueDay, today) {
+  const day = Number(dueDay);
+  if (!(day >= 1 && day <= 31)) return null;
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  for (const off of [0, 1]) {
+    const y = t0.getFullYear(), m = t0.getMonth() + off;
+    const d = new Date(y, m, Math.min(day, dim(new Date(y, m, 1).getFullYear(), new Date(y, m, 1).getMonth())));
+    if (d >= t0) return { date: ymd(d), diff: Math.round((d - t0) / 86400000) };
+  }
+  return null;
 }
 
 // ---------- tong sampah & pulih ----------
@@ -710,6 +739,7 @@ async function initCloud() {
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && sbUser) syncNow(); });
 }
 function toast(msg) {
+  document.querySelectorAll(".toast:not(.undo)").forEach(x => x.remove());
   const el = document.createElement("div"); el.className = "toast"; el.role = "status"; el.textContent = msg;
   document.body.appendChild(el); setTimeout(() => el.remove(), 2200);
 }
@@ -816,6 +846,11 @@ function vRingkasan() {
     ${bar(c.passivePct)}
   </section>
 
+  ${S.cards.length ? `<section class="card">
+    <h2>Kad kredit</h2>
+    <ul class="list">${S.cards.map(cd => { const k = cardCalc(S, cd, t); return `<li><div class="grow"><div>💳 ${esc(cd.name)}</div>${cardDueLine(cd, k)}</div>${k.balance > 0 ? `<button class="sm" data-tab="hutang">Bayar</button>` : ""}</li>`; }).join("")}</ul>
+  </section>` : ""}
+
   <section class="card">
     <h2>Peringatan bayaran (14 hari)</h2>
     ${up.length ? `<ul class="list">${up.map(u => `<li><div class="grow"><div>${esc(u.name)}</div>
@@ -868,8 +903,13 @@ const withMonthHeads = (rows, all, item) => rows.map((r, i) => {
 
 function vKewangan() {
   const c = calc(S), t = today();
-  const rows = S.tx.filter(x => !txMonth || String(x.date).slice(0, 7) === txMonth).sort((a, b) => b.date.localeCompare(a.date));
-  const tin = sum(rows.filter(r => r.type === "in"), r => r.amount), tout = sum(rows.filter(r => r.type === "out"), r => r.amount);
+  const inSel = x => !txMonth || String(x.date).slice(0, 7) === txMonth;
+  const alloc = Object.assign({}, ...S.cards.map(c => cardAlloc(S, c.id)));
+  const cardRows = S.cardTx.filter(x => x.type === "belanja" && inSel(x)).map(x => ({ ...x, _card: true }));
+  const rows = [...S.tx.filter(inSel), ...cardRows].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const isBill = r => !r._card && r.type === "out" && r.cat === "Kad kredit";
+  const tin = sum(rows.filter(r => !r._card && r.type === "in"), r => r.amount);
+  const tout = sum(rows.filter(r => r._card || (r.type === "out" && !isBill(r))), r => r.amount);
   const gs = savCalc(S.gold.have, S.gold.target, S.gold.by, t);
   const { s1, s2, stage } = emergencyCalc(S, t);
   const stLine = (sv, label) => sv.need ? `Perlu ${RM(sv.need)} lagi · ${isFinite(sv.perMonth) ? RM(sv.perMonth) + " sebulan" : "tarikh sasaran sudah lepas"}` : label + " tercapai ✓";
@@ -887,17 +927,21 @@ function vKewangan() {
   </section>
 
   <section class="card">
-    <div class="row between"><h2>Transaksi</h2>${monthSelect("txmonth", txMonth, S.tx.map(t => t.date))}</div>
+    <div class="row between"><h2>Transaksi</h2>${monthSelect("txmonth", txMonth, [...S.tx, ...S.cardTx].map(t => t.date))}</div>
     ${txMonth ? "" : `<p class="small muted" style="margin:0 0 6px">Semua bulan · ${rows.length} transaksi</p>`}
     <div class="grid3">${stat("Masuk", RM(tin), "pos")}${stat("Keluar", RM(tout), "neg")}${stat("Bersih", RM(tin - tout), tin - tout >= 0 ? "pos" : "neg")}</div>
-    ${rows.length ? `<ul class="list" style="margin-top:8px">${withMonthHeads(rows, !txMonth, r => `<li><div class="grow"><div>${esc(r.cat)}${r.note ? ` <span class="muted small">· ${esc(r.note)}</span>` : ""}</div><div class="small muted">${fmtD(r.date)}</div></div>
-      <span class="num ${r.type === "in" ? "pos" : "neg"}">${r.type === "in" ? "+" : "−"}${RM(r.amount)}</span>${del("tx", r.id)}</li>`)}</ul>` : `<p class="empty">${txMonth ? "Tiada transaksi untuk " + fmtYM(txMonth) : "Belum ada transaksi"}.</p>`}
+    ${rows.length ? `<ul class="list" style="margin-top:8px">${withMonthHeads(rows, !txMonth, r => r._card
+      ? `<li><div class="grow"><div>${esc(r.cat)}${r.note ? ` <span class="muted small">· ${esc(r.note)}</span>` : ""}</div><div class="small muted">${fmtD(r.date)} · 💳 ${esc(cardName(r.cardId))}</div><div style="margin-top:4px">${payPill(alloc[r.id])}</div></div>
+      <span class="num neg">−${RM(r.amount)}</span>${del("cardTx", r.id)}</li>`
+      : `<li><div class="grow"><div>${esc(r.cat)}${r.note ? ` <span class="muted small">· ${esc(r.note)}</span>` : ""}</div><div class="small muted">${fmtD(r.date)}${isBill(r) ? " · bayar bil kad (tidak dikira dalam Keluar)" : ""}</div></div>
+      <span class="num ${r.type === "in" ? "pos" : isBill(r) ? "muted" : "neg"}">${r.type === "in" ? "+" : "−"}${RM(r.amount)}</span>${del("tx", r.id)}</li>`)}</ul>` : `<p class="empty">${txMonth ? "Tiada transaksi untuk " + fmtYM(txMonth) : "Belum ada transaksi"}.</p>`}
     <form class="add" data-form="tx">
       <label>Tarikh<input name="date" type="date" value="${ymd(t)}" required></label>
       <label>Jenis<select name="type"><option value="out">Keluar</option><option value="in">Masuk</option></select></label>
       <label>Kategori<input name="cat" required list="cats" placeholder="cth. Makan"></label>
       <label>Jumlah (RM)<input name="amount" type="number" inputmode="decimal" min="0" step="0.01" required></label>
       <label>Nota<input name="note"></label>
+      ${S.cards.length ? `<label>Bayar guna<select name="via"><option value="">Tunai / debit</option>${S.cards.map(c => `<option value="${c.id}">💳 ${esc(c.name)}</option>`).join("")}</select></label>` : ""}
       <button class="primary">Rekod</button>
     </form>
     <datalist id="cats">${["Gaji","Sampingan","Pasif","Makan","Pengangkutan","Sewa","Utiliti","Komitmen","Hutang","Simpanan","Emas","ASB","Tabung Haji","Kursus","Lain-lain"].map(x => `<option value="${x}">`).join("")}</datalist>
@@ -952,11 +996,18 @@ function vKewangan() {
 
 const CARD_CATS = ["Makan", "Minyak", "Barang dapur", "Bil", "Belian dalam talian", "Pakaian", "Kesihatan", "Kursus", "Perjalanan", "Lain-lain"];
 let cardMonth = ym(today()), cardFilter = "";
+function cardDueLine(c, k) {
+  if (k.balance <= 0) return `<div style="margin-top:6px"><span class="pill ok">✓ Sudah bayar semua</span></div>`;
+  const nd = nextDue(c.dueDay, today());
+  const unpaid = Object.values(cardAlloc(S, c.id)).filter(a => a.status !== "dibayar").length;
+  return `<div class="row" style="margin-top:6px;gap:6px"><span class="pill ${nd && nd.diff <= 3 ? "bad" : "warn"}">Belum bayar ${RM(k.balance)}</span><span class="small muted">${unpaid} belanja${nd ? ` · tarikh akhir ${fmtD(nd.date)} (${nd.diff === 0 ? "hari ini" : nd.diff + " hari lagi"})` : ""}</span></div>`;
+}
 function vKad() {
   const t = today();
   const cards = S.cards.map(c => ({ c, k: cardCalc(S, c, t) }));
   const totBal = sum(cards, x => x.k.balance), totLim = sum(cards, x => x.k.limit);
   const totUtil = totLim > 0 ? totBal / totLim * 100 : 0;
+  const allocAll = Object.assign({}, ...S.cards.map(c => cardAlloc(S, c.id)));
   const rows = S.cardTx.filter(x => (!cardMonth || String(x.date).slice(0, 7) === cardMonth) && (!cardFilter || x.cardId === cardFilter)).sort((a, b) => b.date.localeCompare(a.date));
   const mSpend = sum(rows.filter(r => r.type === "belanja"), r => r.amount), mPaid = sum(rows.filter(r => r.type === "bayar"), r => r.amount);
   const cname = id => (S.cards.find(c => c.id === id) || { name: "(kad dipadam)" }).name;
@@ -967,6 +1018,7 @@ function vKad() {
     ${cards.length ? `<div class="grid2">${stat("Baki semua kad", RM(totBal), totBal ? "neg" : "")}${stat("Had tersedia", RM(totLim - totBal))}</div>
     ${cards.map(({ c, k }) => `<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
       <div class="row between"><div><b>${esc(c.name)}</b> <span class="small muted">· bayar ${c.dueDay || "—"} hb${c.rate ? ` · ${c.rate}%` : ""}</span></div>${del("cards", c.id)}</div>
+      ${cardDueLine(c, k)}
       <div class="row between small" style="margin-top:4px"><span>Baki ${RM(k.balance)} / had ${RM(k.limit)}</span><span class="pill ${lvl(k.level)}">${k.util.toFixed(0)}%</span></div>
       ${bar(k.util, k.util > 70 ? "" : "amber")}
       <div class="grid3" style="margin-top:8px">${stat("Belanja bulan ini", RM(k.monthSpend))}${stat("Bayaran minimum ≈", RM(k.minPay))}${stat("Faedah sebulan jika tak bayar penuh ≈", RM(k.interest))}</div>
@@ -1001,7 +1053,7 @@ function vKad() {
       ${monthSelect("cardmonth", cardMonth, S.cardTx.map(t => t.date))}
     </div>
     <div class="grid2" style="margin-top:8px">${stat("Belanja " + (cardMonth ? fmtYM(cardMonth) : "semua bulan"), RM(mSpend), "neg")}${stat("Dibayar", RM(mPaid), "pos")}</div>
-    ${rows.length ? `<ul class="list" style="margin-top:8px">${withMonthHeads(rows, !cardMonth, r => `<li><div class="grow"><div>${esc(r.cat)}${r.note ? ` <span class="muted small">· ${esc(r.note)}</span>` : ""}</div><div class="small muted">${fmtD(r.date)} · ${esc(cname(r.cardId))}</div></div>
+    ${rows.length ? `<ul class="list" style="margin-top:8px">${withMonthHeads(rows, !cardMonth, r => `<li><div class="grow"><div>${esc(r.cat)}${r.note ? ` <span class="muted small">· ${esc(r.note)}</span>` : ""}</div><div class="small muted">${fmtD(r.date)} · ${esc(cname(r.cardId))}</div>${r.type !== "bayar" ? `<div style="margin-top:4px">${payPill(allocAll[r.id])}</div>` : ""}</div>
       <span class="num ${r.type === "bayar" ? "pos" : r.type === "awal" ? "" : "neg"}">${r.type === "bayar" ? "−" : "+"}${RM(r.amount)}</span>${del("cardTx", r.id)}</li>`)}</ul>` : `<p class="empty">${cardMonth ? "Tiada rekod untuk " + fmtYM(cardMonth) : "Belum ada rekod"}.</p>`}
   </section>` : ""}`;
 }
@@ -1239,6 +1291,14 @@ function vTetapan() {
   <p class="small muted" style="text-align:center">Pelan 2030 · skema v${S.v}</p>`;
 }
 
+function payPill(st) {
+  if (!st) return "";
+  if (st.status === "dibayar") return `<span class="pill ok">Sudah bayar</span>`;
+  if (st.status === "separa") return `<span class="pill warn">Separa · baki ${RM(st.owed)}</span>`;
+  return `<span class="pill bad">Belum bayar</span>`;
+}
+const cardName = id => (S.cards.find(c => c.id === id) || { name: "(kad dipadam)" }).name;
+
 const VIEWS = { ringkasan: vRingkasan, kewangan: vKewangan, hutang: vHutang, pelan: vPelan, niaga: vNiaga, tetapan: vTetapan };
 
 function render() {
@@ -1289,7 +1349,13 @@ document.addEventListener("submit", e => {
   }
   switch (f.dataset.form) {
     case "income": S.incomes.push({ id: uid(), name: d.name.trim(), type: d.type, amount: num(d.amount) }); break;
-    case "tx": S.tx.push({ id: uid(), date: d.date, type: d.type, cat: d.cat.trim(), amount: num(d.amount), note: d.note.trim() }); if (txMonth) txMonth = d.date.slice(0, 7); break;
+    case "tx":
+      if (d.via && d.type === "out" && S.cards.some(c => c.id === d.via)) {
+        S.cardTx.push({ id: uid(), cardId: d.via, date: d.date, type: "belanja", amount: num(d.amount), cat: d.cat.trim(), note: d.note.trim() });
+        toast("Direkod pada kad " + cardName(d.via) + " — belum bayar");
+      } else S.tx.push({ id: uid(), date: d.date, type: d.type, cat: d.cat.trim(), amount: num(d.amount), note: d.note.trim() });
+      if (txMonth) txMonth = d.date.slice(0, 7);
+      break;
     case "gold": Object.assign(S.gold, { have: num(d.have), target: num(d.target), price: num(d.price), by: d.by || S.gold.by }); toast("Disimpan"); break;
     case "emergency":
       Object.assign(S.asb, { have: num(d.asbHave), s1: num(d.s1), s1by: d.s1by || S.asb.s1by });

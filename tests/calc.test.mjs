@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -335,4 +335,29 @@ test("findLost: cari item yang hilang dalam salinan lama", () => {
   const by = Object.fromEntries(lost.map(x => [x.item.id, x]));
   assert.equal(by.hilang1.source, "lama");          // salinan pertama diutamakan
   assert.equal(by.hilang2.list, "debts");
+});
+
+test("cardAlloc: bayaran kad tutup belanja paling lama dahulu", () => {
+  const S = L.normalize({ cardTx: [
+    { id: "b2", cardId: "k", date: "2026-11-03", type: "belanja", amount: 100 },
+    { id: "b1", cardId: "k", date: "2026-11-01", type: "belanja", amount: 60 },
+    { id: "b3", cardId: "k", date: "2026-11-05", type: "belanja", amount: 40 },
+    { id: "p1", cardId: "k", date: "2026-11-10", type: "bayar", amount: 120 },
+    { id: "z", cardId: "lain", date: "2026-11-01", type: "belanja", amount: 999 }
+  ] });
+  const a = L.cardAlloc(S, "k");
+  assert.equal(a.b1.status, "dibayar");
+  assert.equal(a.b2.status, "separa"); assert.equal(a.b2.owed, 40);
+  assert.equal(a.b3.status, "belum");
+  assert.equal(a.z, undefined);
+  S.cardTx.push({ id: "p2", cardId: "k", date: "2026-11-12", type: "bayar", amount: 80 });
+  assert.ok(Object.values(L.cardAlloc(S, "k")).every(x => x.status === "dibayar"));
+});
+
+test("nextDue: tarikh akhir seterusnya", () => {
+  assert.deepEqual(L.nextDue(15, new Date(2026, 10, 4)), { date: "2026-11-15", diff: 11 });
+  assert.deepEqual(L.nextDue(4, new Date(2026, 10, 4)), { date: "2026-11-04", diff: 0 });
+  assert.deepEqual(L.nextDue(3, new Date(2026, 10, 4)), { date: "2026-12-03", diff: 29 });
+  assert.equal(L.nextDue(31, new Date(2027, 1, 10)).date, "2027-02-28");
+  assert.equal(L.nextDue(null, new Date()), null);
 });
