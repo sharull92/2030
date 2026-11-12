@@ -429,7 +429,7 @@ test("excelSheets: helaian Excel bulan dipilih & semua data", () => {
   const sh = Object.fromEntries(L.excelSheets(S, "2026-11", t).map(x => [x.name, x.rows]));
   assert.deepEqual(Object.keys(sh), ["Ringkasan", "Transaksi", "Kad kredit", "Simpanan", "Komitmen & hutang"]);
   assert.deepEqual(sh.Ringkasan[0], ["Laporan kewangan", "Nov 2026"]);
-  assert.deepEqual(sh.Ringkasan[4], ["Keluar (RM)", 213.2]);           // 63.20 + 150 (bil kad tidak dikira)
+  assert.deepEqual(sh.Ringkasan.find(r => r[0] === "Keluar (RM)"), ["Keluar (RM)", 213.2]);           // 63.20 + 150 (bil kad tidak dikira)
   assert.equal(sh.Transaksi.length, 1 + 4);                            // Okt dikecualikan
   assert.deepEqual(sh.Transaksi[3], ["2026-11-03", "Keluar", "Minyak", "", "Kad Visa", 150, "Ya"]);
   assert.equal(sh.Transaksi.find(r => r[2] === "Kad kredit")[6], "Tidak");
@@ -621,4 +621,30 @@ test("bulan kewangan 26hb–25hb: tempoh, julat, ringkasan bulan & tahun", () =>
   assert.equal(y26.income, 3701.23); assert.equal(y26.spent, 130);   // 24 Dis 2025 → 2025; 28 Dis 2026 → 2027
   assert.equal(L.monthFlow(S, "2026-01").in, 3701.23);
   assert.equal(L.budgetStatus(L.normalize({ ...S, budgets: [{ id: "b", cat: "Makan", amount: 100 }] }), "2026-01").rows[0].spent, 50);
+});
+
+test("excelSheets: penapis tunai / kad kredit", () => {
+  const S = L.normalize({ settings: { monthStart: 1 }, cards: [{ id: "k", name: "Kad A", limit: 5000, dueDay: 10 }], budgets: [{ id: "b", cat: "Makan", amount: 500 }],
+    tx: [{ id: "1", date: "2026-11-01", type: "in", cat: "Gaji", amount: 5000 }, { id: "2", date: "2026-11-02", type: "out", cat: "Makan", amount: 100 },
+         { id: "3", date: "2026-11-04", type: "out", cat: "Kad kredit", amount: 200 }, { id: "4", date: "2026-11-05", type: "out", cat: "Petrol", amount: 50, card: true }],
+    cardTx: [{ id: "c1", cardId: "k", date: "2026-11-03", type: "belanja", amount: 150, cat: "Makan" }, { id: "c2", cardId: "k", date: "2026-11-04", type: "bayar", amount: 200 }] });
+  const t = new Date(2026, 10, 20);
+  const get = (mode, m = "2026-11") => Object.fromEntries(L.excelSheets(S, m, t, mode).map(x => [x.name, x.rows]));
+  const val = (rows, k) => (rows.find(r => r[0] === k) || [])[1];
+  const tu = get("tunai");
+  assert.equal(val(tu.Ringkasan, "Keluar tunai (RM)"), 300);
+  assert.equal(val(tu.Ringkasan, "Baki tunai (RM)"), 4700);
+  assert.equal(tu["Kad kredit"], undefined);
+  assert.deepEqual(tu.Transaksi.slice(1).map(r => r[2]), ["Gaji", "Makan", "Kad kredit"]);
+  assert.equal(tu.Bajet[1][3], 100); // lajur Tunai
+  assert.equal(tu.Bajet[1][4], 250); // jumlah semua
+  const kd = get("kad");
+  assert.equal(val(kd.Ringkasan, "Belanja kad (RM)"), 200);
+  assert.equal(val(kd.Ringkasan, "Bayaran kad (RM)"), 200);
+  assert.deepEqual(kd.Transaksi.slice(1).map(r => r[2]), ["Makan", "Bayaran kad", "Petrol"]);
+  assert.equal(kd.Bajet[1][3], 150);
+  const all = get("", "");
+  assert.equal(val(all.Ringkasan, "Keluar (RM)"), 300);
+  assert.equal(val(get("tunai", "").Ringkasan, "Keluar tunai (RM)"), 300);
+  assert.equal(val(get("kad", "").Ringkasan, "Belanja kad (RM)"), 200);
 });

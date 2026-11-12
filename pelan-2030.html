@@ -97,7 +97,7 @@ input[type=file]{min-height:0;padding:8px}
 .big{font-size:48px;font-weight:800;line-height:52px;letter-spacing:-.02em}
 /* nav */
 nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);
-  display:grid;grid-template-columns:repeat(5,1fr);padding:0 4px env(safe-area-inset-bottom);z-index:10}
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:0 4px env(safe-area-inset-bottom);z-index:10}
 nav.tabs button{border:0;box-shadow:none;background:transparent;display:grid;justify-items:center;align-content:center;gap:4px;font-size:12px;line-height:16px;font-weight:600;min-height:64px;padding:0 2px;color:var(--muted);border-radius:0}
 nav.tabs button i{display:grid;place-items:center;width:56px;height:32px;border-radius:999px}
 nav.tabs button svg{width:24px;height:24px}
@@ -124,7 +124,22 @@ html,body{overflow-x:clip}
 #app select{max-width:100%;text-overflow:ellipsis}
 #app input,#app select,#app textarea{min-width:0}
 .stat{min-width:0;container-type:inline-size}
-.stat b{white-space:nowrap;font-size:clamp(.85rem,11.5cqw,1.4rem)!important;overflow:visible}
+.stat b{white-space:nowrap;font-size:clamp(.6rem,11.5cqw,1.4rem)!important;overflow:visible}
+/* Auto-muat skrin sempit / fon telefon besar */
+.stat span{overflow-wrap:break-word;hyphens:auto}
+.seg{grid-template-columns:repeat(2,minmax(0,1fr))}
+.seg button{min-width:0;padding:4px 6px;white-space:normal;overflow-wrap:anywhere;line-height:1.15}
+.stamps{grid-template-columns:repeat(5,minmax(0,1fr));gap:clamp(3px,1.5vw,8px)}
+.stamp{min-width:0;font-size:clamp(10px,3.4vw,14px);overflow:hidden}
+.stages span{min-width:0;overflow-wrap:anywhere;font-size:clamp(10px,3.2vw,13px)}
+nav.tabs button{min-width:0}
+nav.tabs button{font-size:clamp(9px,3.2vw,12px);overflow-wrap:normal;word-break:normal;text-align:center}
+ul.list .grow{flex:1 1 7.5em}
+ul.list li{flex-wrap:wrap;row-gap:4px}
+#app .row > h2,#app .colhead h2,#app .row > h3{min-width:min-content;overflow-wrap:normal;word-break:normal}
+@media (max-width:330px){.grid2,.grid3{grid-template-columns:minmax(0,1fr)}.stat b{font-size:clamp(.85rem,9cqw,1.4rem)!important}}
+nav.tabs button i{width:min(56px,100%)}
+#app .pill{white-space:normal;text-overflow:clip}
 .is-hid{display:none!important}
 .colhead{display:flex;align-items:center;gap:8px}
 .colhead > h2,.colhead > h3{margin:0;flex:1;min-width:0}
@@ -140,6 +155,9 @@ section.card.is-collapsed .colhead{margin-bottom:0}
 .seg button{border:0;box-shadow:none;background:transparent;min-height:44px;border-radius:12px;color:var(--muted)}
 .seg button[aria-pressed="true"]{background:var(--surface);box-shadow:var(--shadow-card);color:var(--neg)}
 .seg button.in[aria-pressed="true"]{color:var(--pos)}
+.seg.pay{grid-template-columns:repeat(3,minmax(0,1fr));margin:6px 0 10px;max-width:100%}
+.seg.pay button{min-width:0;min-height:44px;padding:4px 2px;font-size:14px;line-height:1.15;white-space:normal;overflow-wrap:anywhere;hyphens:auto}
+.seg.pay button span{display:block;font-weight:400;font-size:12px}
 .amt{font-size:40px;font-weight:800;line-height:48px;text-align:center;border:0;border-bottom:2px solid var(--line);border-radius:0;background:transparent;padding:12px 4px;margin:12px 0;min-height:72px;font-variant-numeric:tabular-nums}
 .amt:focus{outline:none;box-shadow:none;border-bottom-color:var(--primary)}
 .amt::-webkit-inner-spin-button,.amt::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.amt{-moz-appearance:textfield}
@@ -554,36 +572,44 @@ function monthReport(S, m, today, mode = "") {
 
 // Helaian Excel sebagai tatasusunan baris. m = "YYYY-MM" atau "" (semua data).
 // Setiap helaian: { name, rows, money: [indeks lajur RM], grams: [indeks lajur gram], dates: [indeks lajur tarikh] }
-function excelSheets(S, m, today) {
+// mode: "" semua, "tunai" (tx bukan belian kad; bil kad dikira keluar; tiada helaian kad), "kad" (belanja + bayaran kad).
+function excelSheets(S, m, today, mode = "") {
   const inR = t => !m || pk(S, t.date) === m;
   const cardNm = id => (S.cards.find(c => c.id === id) || { name: "(kad dipadam)" }).name;
   const KL = { emas: "Emas", asb: "ASB", th: "Tabung Haji" };
   const n2 = v => Math.round((Number(v) || 0) * 100) / 100;
   // Ringkasan
   const ys = m ? null : yearSummary(S, 0, today);
-  const flow = m ? monthFlow(S, m) : { in: ys.income, out: ys.spent };
-  const tx = S.tx.filter(inR), ctx = S.cardTx.filter(inR);
+  const flow = m ? monthFlow(S, m, mode) : mode === "tunai" ? { in: ys.income, out: ys.cashOut } : mode === "kad" ? { in: ys.cardPaid, out: ys.cardUsed } : { in: ys.income, out: ys.spent };
+  const tx = S.tx.filter(t => inR(t) && (!mode || (mode === "kad" ? t.type === "out" && isCardTx(t) : !isCardTx(t)))), ctx = mode === "tunai" ? [] : S.cardTx.filter(inR);
+  const isBill = t => mode !== "tunai" && t.type === "out" && t.cat === "Kad kredit";
   const byCat = {};
-  for (const t of tx) if (t.type === "out" && t.cat !== "Kad kredit") byCat[t.cat || "Lain-lain"] = (byCat[t.cat || "Lain-lain"] || 0) + (Number(t.amount) || 0);
+  for (const t of tx) if (t.type === "out" && !isBill(t)) byCat[t.cat || "Lain-lain"] = (byCat[t.cat || "Lain-lain"] || 0) + (Number(t.amount) || 0);
   for (const t of ctx) if (t.type === "belanja") byCat[t.cat || "Lain-lain"] = (byCat[t.cat || "Lain-lain"] || 0) + (Number(t.amount) || 0);
   const c = calc(S);
   const ring = [
     ["Laporan kewangan", m ? fmtYMx(m) : "Semua data"],
     ["Nama", S.settings.name || ""],
+    ["Cara bayar", mode === "tunai" ? "Tunai sahaja" : mode === "kad" ? "Kad kredit sahaja" : "Semua"],
     [],
+    ...(mode === "kad" ? [
+    ["Belanja kad (RM)", n2(flow.out)],
+    ["Bayaran kad (RM)", n2(flow.in)],
+    ["Belum bayar sekarang (RM)", n2(sum(S.cards, k => cardCalc(S, k, today).balance))]] : [
     ["Masuk (RM)", n2(flow.in)],
-    ["Keluar (RM)", n2(flow.out)],
-    ["Bersih (RM)", n2(flow.in - flow.out)],
+    [mode === "tunai" ? "Keluar tunai (RM)" : "Keluar (RM)", n2(flow.out)],
+    [mode === "tunai" ? "Baki tunai (RM)" : "Bersih (RM)", n2(flow.in - flow.out)]]),
     ["Komitmen + hutang sebulan (RM)", n2(c.out)],
     ["DSR", isFinite(c.dsr) ? Math.round(c.dsr) + "% (" + c.dsrLevel + ")" : "—"],
     [],
-    ["Duit keluar ikut kategori", "Jumlah (RM)", "%"],
+    [mode === "tunai" ? "Keluar tunai ikut kategori" : mode === "kad" ? "Belanja kad ikut kategori" : "Duit keluar ikut kategori", "Jumlah (RM)", "%"],
     ...Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, n2(v), flow.out ? Math.round(v / flow.out * 1000) / 10 : 0])
   ];
   // Transaksi (tunai + belanja kad)
   const trx = [["Tarikh", "Jenis", "Kategori", "Nota", "Cara bayar", "Jumlah (RM)", "Dikira dalam Keluar"],
-    ...[...tx.map(t => [t.date, t.type === "in" ? "Masuk" : "Keluar", t.cat, t.note || "", t.type === "in" ? "" : t.cat === "Kad kredit" ? "Bayar bil kad" : "Tunai / debit", n2(t.amount), t.type === "in" ? "" : t.cat === "Kad kredit" ? "Tidak" : "Ya"]),
-       ...ctx.filter(t => t.type === "belanja").map(t => [t.date, "Keluar", t.cat, t.note || "", "Kad " + cardNm(t.cardId), n2(t.amount), "Ya"])]
+    ...[...tx.map(t => [t.date, t.type === "in" ? "Masuk" : "Keluar", t.cat, t.note || "", t.type === "in" ? "" : t.cat === "Kad kredit" ? "Bayar bil kad" : isCardTx(t) ? "Kad kredit" : "Tunai / debit", n2(t.amount), t.type === "in" ? "" : isBill(t) ? "Tidak" : "Ya"]),
+       ...ctx.filter(t => t.type === "belanja").map(t => [t.date, "Keluar", t.cat, t.note || "", "Kad " + cardNm(t.cardId), n2(t.amount), "Ya"]),
+       ...(mode === "kad" ? ctx.filter(t => t.type === "bayar").map(t => [t.date, "Masuk", "Bayaran kad", t.note || "", "Kad " + cardNm(t.cardId), n2(t.amount), ""]) : [])]
       .sort((a, b) => String(a[0]).localeCompare(String(b[0])))];
   // Kad kredit
   const alloc = Object.assign({}, ...S.cards.map(k => cardAlloc(S, k.id)));
@@ -610,14 +636,14 @@ function excelSheets(S, m, today) {
   return [
     { name: "Ringkasan", rows: ring, money: [1], cols: [34, 16, 8] },
     { name: "Transaksi", rows: trx, money: [5], dates: [0], cols: [12, 9, 18, 30, 20, 13, 10] },
-    { name: "Kad kredit", rows: kad, money: [5, 7], dates: [0], cols: [12, 18, 10, 16, 24, 13, 13, 14] },
+    ...(mode === "tunai" ? [] : [{ name: "Kad kredit", rows: kad, money: [5, 7], dates: [0], cols: [12, 18, 10, 16, 24, 13, 13, 14] }]),
     { name: "Simpanan", rows: sim, money: [4], grams: [3], dates: [0], cols: [26, 14, 10, 10, 13, 24] },
     { name: "Komitmen & hutang", rows: km, money: [3, 4], cols: [24, 10, 9, 14, 14, 9, 16] },
-    ...(S.budgets.length ? [{ name: "Bajet", money: [2, 3, 4], cols: [10, 22, 13, 13, 13, 7, 12], rows: (() => {
+    ...(S.budgets.length ? [{ name: "Bajet", money: mode ? [2, 3, 4, 5] : [2, 3, 4], cols: mode ? [10, 22, 13, 13, 13, 13, 7, 12] : [10, 22, 13, 13, 13, 7, 12], rows: (() => {
       const months = m ? [m] : [...new Set([...S.tx, ...S.cardTx].map(t => pk(S, t.date)))].filter(x => /^\d{4}-\d{2}$/.test(x)).sort();
-      const out = [["Bulan", "Kategori", "Bajet (RM)", "Belanja (RM)", "Baki (RM)", "%", "Status"]];
-      for (const mm of months) for (const b of budgetStatus(S, mm).rows)
-        out.push([fmtYMx(mm), b.cat, n2(b.amount), n2(b.spent), n2(b.left), isFinite(b.pct) ? Math.round(b.pct) : "", { lebih: "Lebih bajet", hampir: "Hampir", ok: "OK" }[b.level]]);
+      const out = [["Bulan", "Kategori", "Bajet (RM)", ...(mode ? [mode === "kad" ? "Kad (RM)" : "Tunai (RM)"] : []), "Belanja (RM)", "Baki (RM)", "%", "Status"]];
+      for (const mm of months) { const bm = mode ? budgetStatus(S, mm, mode) : null; for (const b of budgetStatus(S, mm).rows)
+        out.push([fmtYMx(mm), b.cat, n2(b.amount), ...(bm ? [n2((bm.rows.find(x => x.id === b.id) || {}).spent)] : []), n2(b.spent), n2(b.left), isFinite(b.pct) ? Math.round(b.pct) : "", { lebih: "Lebih bajet", hampir: "Hampir", ok: "OK" }[b.level]]); }
       return out;
     })() }] : [])
   ];
@@ -1548,12 +1574,12 @@ function vRingkasan() {
   <section class="card">
     <div class="row between"><h2>Ringkasan ${sumMonth ? fmtYM(sumMonth) : sumYear || "2026–2030"}</h2></div>
     <div class="row" style="gap:8px;margin:2px 0 6px">
-      <select data-act="sumyear" aria-label="Pilih tahun" style="width:auto;flex:1"><option value="0" ${sumYear ? "" : "selected"}>Semua tahun</option>${years.map(y => `<option value="${y}" ${y === sumYear ? "selected" : ""}>Tahun ${y}</option>`).join("")}</select>
-      ${sumYear ? `<select data-act="summonth" aria-label="Pilih bulan" style="width:auto;flex:1"><option value="" ${sumMonth ? "" : "selected"}>Sepanjang tahun</option>${Array.from({ length: 12 }, (_, i) => `${sumYear}-${String(i + 1).padStart(2, "0")}`).map(k => `<option value="${k}" ${k === sumMonth ? "selected" : ""}>${fmtYM(k)}${k === curP ? " · bulan ini" : ""}</option>`).join("")}</select>` : ""}
+      <select data-act="sumyear" aria-label="Pilih tahun" style="width:auto;flex:1 1 8.5em;min-width:0"><option value="0" ${sumYear ? "" : "selected"}>Semua tahun</option>${years.map(y => `<option value="${y}" ${y === sumYear ? "selected" : ""}>Tahun ${y}</option>`).join("")}</select>
+      ${sumYear ? `<select data-act="summonth" aria-label="Pilih bulan" style="width:auto;flex:1 1 8.5em;min-width:0"><option value="" ${sumMonth ? "" : "selected"}>Sepanjang tahun</option>${Array.from({ length: 12 }, (_, i) => `${sumYear}-${String(i + 1).padStart(2, "0")}`).map(k => `<option value="${k}" ${k === sumMonth ? "selected" : ""}>${fmtYM(k)}${k === curP ? " · bulan ini" : ""}</option>`).join("")}</select>` : ""}
     </div>
     ${rngTxt ? `<div class="small muted" style="margin:0 0 4px">${rngTxt}</div>` : ""}
     <div class="row between small muted" style="margin:0 0 8px"><span>${sumMonth ? "" : ys.months + " bulan direkod"}</span>${dsrPill(c)}</div>
-    <div class="seg" style="grid-template-columns:1fr 1fr 1fr;margin:0 0 10px">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) => `<button type="button" data-act="sumpay" data-v="${k}" aria-pressed="${sumPay === k}" style="padding:4px 2px;white-space:nowrap">${l}</button>`).join("")}</div>
+    ${paySeg("sumpay", sumPay)}
     ${sumPay === "tunai" ? `<div class="grid3">
       <div class="stat"><span>Pendapatan diterima</span><b>${RM(ys.income)}</b>${ys.expected ? `<span>+ ${RM(ys.expected)} dijangka bulan ini (belum direkod)</span>` : ""}</div>
       <div class="stat"><span>Keluar tunai</span><b class="${ys.cashOut ? "neg" : ""}">${RM(ys.cashOut)}</b><span>${ys.pending ? `+ ${RM(ys.pending)} komitmen bulan ini belum bayar` : "Termasuk bayaran bil kad"}</span></div>
@@ -1607,7 +1633,7 @@ function vRingkasan() {
         <option value="12" ${trendSel === "12" ? "selected" : ""}>12 bulan terakhir</option>
         ${years.map(y => `<option value="${y}" ${trendSel === String(y) ? "selected" : ""}>Tahun ${y}</option>`).join("")}
       </select></div>
-    <div class="seg" style="grid-template-columns:1fr 1fr 1fr;margin:6px 0 8px">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) => `<button type="button" data-act="trendpay" data-v="${k}" aria-pressed="${trendPay === k}" style="padding:4px 2px;white-space:nowrap">${l}</button>`).join("")}</div>
+    ${paySeg("trendpay", trendPay)}
     ${(() => { const L = trendPay === "kad" ? ["Bayaran kad", "Belanja kad"] : trendPay === "tunai" ? ["Masuk", "Keluar tunai"] : ["Masuk", "Keluar"];
       return `${chart(tdata, L)}
     <p class="small muted" style="margin:.4rem 0 0">Jumlah: ${L[0].toLowerCase()} ${RM(sum(tdata, d => d.in))} · ${L[1].toLowerCase()} ${RM(sum(tdata, d => d.out))}</p>`; })()}
@@ -1740,8 +1766,8 @@ function loadScript(src) {
 }
 async function exportExcel(all) {
   const m = all ? "" : reportMonth;
-  const sheets = excelSheets(S, m, today());
-  const fname = "Pelan2030-" + (m || "semua-data") + ".xlsx";
+  const sheets = excelSheets(S, m, today(), reportPay);
+  const fname = "Pelan2030-" + (m || "semua-data") + (reportPay === "tunai" ? "-tunai" : reportPay === "kad" ? "-kad" : "") + ".xlsx";
   try {
     if (!window.XLSX) { toast("Menyediakan Excel…"); await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"); }
     const X = window.XLSX, wb = X.utils.book_new();
@@ -1784,7 +1810,7 @@ function vBudget() {
   const pillB = r => r.level === "lebih" ? `<span class="pill bad">Lebih ${RM(-r.left)}</span>` : r.level === "hampir" ? `<span class="pill warn">Baki ${RM(r.left)}</span>` : `<span class="pill ok">Baki ${RM(r.left)}</span>`;
   return `<section class="card" id="bajet">
     <div class="row between"><h2>Bajet bulanan</h2>${monthSelect("budgetmonth", budgetMonth, [...S.tx, ...S.cardTx].map(t => t.date)).replace(/<option value="" (selected)?>Semua bulan<\/option>/, "")}</div>
-    <div class="seg" style="grid-template-columns:1fr 1fr 1fr;margin:6px 0 8px">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) => `<button type="button" data-act="budgetpay" data-v="${k}" aria-pressed="${P === k}" style="padding:4px 2px;white-space:nowrap">${l}</button>`).join("")}</div>
+    ${paySeg("budgetpay", P)}
     ${P && S.budgets.length ? `<p class="small muted" style="margin:0 0 4px">Bar menunjukkan belanja ${pL} sahaja; baki bajet tetap dikira daripada semua belanja.</p>` : ""}
     ${S.budgets.length ? `<div class="row between small" style="margin-top:4px"><span>${P ? `Belanja ${pL} ${RM(bm.spent)} · jumlah ${RM(b.spent)}` : `Belanja ${RM(b.spent)}`} / bajet ${RM(b.budget)}</span><span>${(P ? bm.pct : b.pct).toFixed(0)}%</span></div>
     ${budgetBar({ pct: P ? bm.pct : b.pct, level: b.pct > 100 ? "lebih" : b.pct >= 80 ? "hampir" : "ok" })}
@@ -1815,6 +1841,11 @@ function budgetWarn(cat, date) {
   return r.level === "lebih" ? ` · ⚠️ Bajet ${r.cat} lebih ${RM(-r.left)}` : ` · Bajet ${r.cat} ${r.pct.toFixed(0)}% digunakan`;
 }
 
+// Butang penapis cara bayar Semua / Tunai / Kad kredit (dikongsi semua bahagian).
+function paySeg(act, cur, sub) {
+  return `<div class="seg pay" role="group" aria-label="Cara bayar">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) =>
+    `<button type="button" data-act="${act}" data-v="${k}" aria-pressed="${cur === k}">${l}${sub ? `<span>${sub(k)}</span>` : ""}</button>`).join("")}</div>`;
+}
 function vKewangan() {
   const c = calc(S), t = today();
   const inSel = x => !txMonth || pk(S, x.date) === txMonth;
@@ -1835,8 +1866,8 @@ function vKewangan() {
   <section class="card">
     <h2>Laporan & eksport</h2>
     <p class="small muted"><b>PDF</b>: laporan sebulan (dalam dialog cetak pilih <b>Simpan sebagai PDF</b>). <b>Excel</b>: fail .xlsx dengan helaian Ringkasan, Transaksi, Kad kredit, Simpanan dan Komitmen & hutang.</p>
-    <div class="small muted" style="margin:0 0 4px">Laporan PDF untuk:</div>
-    <div class="seg" style="grid-template-columns:1fr 1fr 1fr;margin:0 0 8px">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) => `<button type="button" data-act="reportpay" data-v="${k}" aria-pressed="${reportPay === k}" style="padding:4px 2px;white-space:nowrap">${l}</button>`).join("")}</div>
+    <div class="small muted" style="margin:0 0 4px">Laporan PDF & Excel untuk:</div>
+    ${paySeg("reportpay", reportPay)}
     <div class="row">${monthSelect("reportmonth", reportMonth, [...S.tx, ...S.cardTx].map(t => t.date)).replace('<option value="" selected>Semua bulan</option>', "").replace('<option value="" >Semua bulan</option>', "")}<button class="primary" data-act="pdf">Eksport PDF</button><button data-act="xlsx">Eksport Excel</button></div>
     <button class="ghost sm" data-act="xlsxall" style="margin-top:6px">Excel semua data</button>
   </section>
@@ -1856,7 +1887,7 @@ function vKewangan() {
 
   <section class="card">
     <div class="row between"><h2>Transaksi</h2>${monthSelect("txmonth", txMonth, [...S.tx, ...S.cardTx].map(t => t.date))}</div>
-    <div class="seg" style="grid-template-columns:1fr 1fr 1fr;margin:0 0 8px">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) => `<button type="button" data-act="txpay" data-v="${k}" aria-pressed="${txPay === k}" style="line-height:1.15;padding:4px 2px;white-space:nowrap">${l}<span class="small" style="display:block;font-weight:400">${payCount(k)} transaksi</span></button>`).join("")}</div>
+    ${paySeg("txpay", txPay, k => payCount(k) + " transaksi")}
     ${txMonth ? "" : `<p class="small muted" style="margin:0 0 6px">Semua bulan · ${rows.length} transaksi</p>`}
     ${txPay === "kad" ? `<div class="grid2">${stat("Belanja kad", RM(tout), "neg")}${stat("Belum bayar", RM(sum(rows.filter(r => r._card), r => { const a = alloc[r.id]; return a ? a.owed || 0 : 0; })), "neg")}</div>`
       : `<div class="grid3">${stat("Masuk", RM(tin), "pos")}${stat("Keluar", RM(tout), "neg")}${stat(txPay ? "Baki tunai" : "Bersih", RM(tin - tout), tin - tout >= 0 ? "pos" : "neg")}</div>`}
@@ -2316,7 +2347,7 @@ function vTetapan() {
     <div class="small muted" style="margin-bottom:6px">Bahasa</div>
     <div class="seg" data-noi18n><button type="button" data-act="lang" data-v="ms" aria-pressed="${LANG === "ms"}">Bahasa Malaysia</button><button type="button" data-act="lang" data-v="en" aria-pressed="${LANG === "en"}">English</button></div>
     <div class="small muted" style="margin:12px 0 6px">Tema</div>
-    <div class="seg" style="grid-template-columns:1fr 1fr 1fr"><button type="button" data-act="theme" data-v="light" aria-pressed="${th === "light"}">☀️ Terang</button><button type="button" data-act="theme" data-v="dark" aria-pressed="${th === "dark"}">🌙 Gelap</button><button type="button" data-act="theme" data-v="auto" aria-pressed="${th === "auto"}">Ikut sistem</button></div>
+    <div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button type="button" data-act="theme" data-v="light" aria-pressed="${th === "light"}">☀️ Terang</button><button type="button" data-act="theme" data-v="dark" aria-pressed="${th === "dark"}">🌙 Gelap</button><button type="button" data-act="theme" data-v="auto" aria-pressed="${th === "auto"}">Ikut sistem</button></div>
     <div class="small muted" style="margin:14px 0 6px">Bahagian disembunyikan: ${HIDDEN.size}</div>
     <div class="row"><button type="button" class="sm" data-act="showall" ${HIDDEN.size ? "" : "disabled"}>Tunjuk semua bahagian</button></div>
     <p class="small muted" style="margin:6px 0 0">Tekan ▾ di sebelah tajuk mana-mana bahagian untuk menyembunyikannya.</p>
