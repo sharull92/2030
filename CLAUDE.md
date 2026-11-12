@@ -82,6 +82,11 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - Token sama dengan auto e-mel (`plan_tokens`). iPhone tidak benarkan baca notifikasi app lain.
 - Ujian: `tests/notif.test.mjs`, `tests/api-notif.test.mjs`.
 
+## Bahasa (BM / English) & tema
+- Teks UI ditulis dalam BM. Mod English: `i18n/en.js` (`window.I18N_EN = { exact, phrases }`) + `trS()` dalam pelan-2030.html. MutationObserver menterjemah setiap nod teks & atribut (placeholder/aria-label/title) yang ditambah; `exact` dipadan selepas nombor → `{n}` dan bulan (BM/EN) → `{m}`; `phrases` sandaran (dalam DOM hanya frasa berbilang perkataan / ada tanda baca; toast & confirm guna `trS(msg, true)` = semua frasa). Elemen `[data-noi18n]`, textarea & skrip dilangkau. `BULAN` & `LOC()` ikut bahasa; Excel (sel & nama helaian) dan nama fail PDF turut diterjemah. Kategori/nota pengguna tidak diterjemah (kecuali sama dengan label UI, cth. "Gaji").
+- **Bila menambah teks UI baru:** tambah terjemahan dalam `i18n/en.js` (kunci = teks BM dengan nombor → `{n}`, bulan → `{m}`).
+- Tema: `document.documentElement.dataset.theme` = light/dark (tiada = ikut sistem), disimpan `localStorage["pelan2030:theme"]`; bahasa `localStorage["pelan2030:lang"]` — kedua-dua ikut peranti, dipasang awal dalam `<head>` (tiada kelipan). Butang BM/EN & ☀️/🌙 di hero Ringkasan (`prefButtons`) + kad "Paparan" di Tetapan. Tukar ke BM = muat semula halaman.
+
 ## Format nombor
 - Wang: `RM()` sentiasa 2 tempat perpuluhan (RM 4,782.00), dibundar ke sen. Semua input wang `step="0.01" inputmode="decimal"`.
 - Emas: `fmtG()` hingga 3 tempat perpuluhan (1.025 g); input gram `step="0.001"`.
