@@ -179,12 +179,13 @@ svg.chart text{fill:var(--muted);font-size:11px;font-family:inherit}
 <script>
 // @logic-start — fungsi tulen (diuji dalam tests/calc.test.mjs)
 const DEFAULTS = () => ({
-  v: 7,
+  v: 8,
   updatedAt: 0,
   settings: { name: "", targetPassive: 3000, emergencyMonths: 6, notify: false, notifyDays: 3 },
   savings: 0,
   incomes: [], commitments: [], debts: [], tx: [], goals: [], ventures: [],
   cards: [], cardTx: [],
+  reviews: [],  // v8: semakan 6 bulan { id, ym, notes, at }
   budgets: [],  // v7: bajet bulanan berulang { id, cat, amount }
   deposits: [], // v6: rekod simpanan { id, kind: "emas"|"asb"|"th", dir: "in"|"out", date, amount (RM), grams?, note }
   trash: {},   // v5: item dipadam { id: { list, item, at, cardTx?, ventureId?, index? } } — disimpan 30 hari
@@ -202,7 +203,7 @@ function normalize(d) {
   o.gold = Object.assign({}, b.gold, d.gold || {});
   o.asb = Object.assign({}, b.asb, d.asb || {});
   o.th = Object.assign({}, b.th, d.th || {});
-  for (const k of ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits", "budgets"]) {
+  for (const k of ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits", "budgets", "reviews"]) {
     if (!Array.isArray(o[k])) o[k] = [];
   }
   if (!o.paid || typeof o.paid !== "object") o.paid = {};
@@ -221,6 +222,9 @@ function normalize(d) {
   if (o.v < 6) o.v = 6;
   // v6 → v7: bajet bulanan ikut kategori
   if (o.v < 7) o.v = 7;
+  // v7 → v8: semakan 6 bulan; matlamat boleh ada { when, tpl, metric, ord } (pilihan); sasaran gaji
+  if (o.settings.targetSalary == null) o.settings.targetSalary = 6000;
+  if (o.v < 8) o.v = 8;
   o.updatedAt = Number(o.updatedAt) || 0;
   return o;
 }
@@ -568,6 +572,92 @@ function budgetStatus(S, m) {
   return { rows, unbudgeted, budget, spent: spentB, unbudgetedTotal: sum(unbudgeted, u => u.spent), pct: budget ? spentB / budget * 100 : 0 };
 }
 
+// ---------- Pelan Tindakan 2026–2030 (dari PDF pengguna) ----------
+const PLAN_YEARS = [
+  { y: 2026, n: 1, theme: "Asas Kemahiran & Kelulusan", short: "Asas kemahiran" },
+  { y: 2027, n: 2, theme: "Pelaksanaan & Kelayakan Trainer", short: "Kelayakan trainer" },
+  { y: 2028, n: 3, theme: "Mula Menjadi Trainer", short: "Mula melatih" },
+  { y: 2029, n: 4, theme: "Rangkaian & Pendapatan Pasif", short: "Pendapatan pasif" },
+  { y: 2030, n: 5, theme: "Kestabilan Kewangan", short: "Kestabilan kewangan" }
+];
+// [tpl, tahun, bila, bidang, tajuk, metrik?]
+const PLAN_TPL = [
+  ["pt01", 2026, "Q1–Q2", "Kemahiran", "Training AI: kursus AI asas hingga pertengahan — AI untuk HR, automasi & prompt engineering. Simpan semua sijil."],
+  ["pt02", 2026, "Q2–Q3", "Kerjaya", "Kuota pekerja asing: siapkan dokumen & permohonan kuota, kemudian pantau status kelulusan."],
+  ["pt03", 2026, "Q4", "Kemahiran", "AI dalam kerja harian: guna AI untuk dokumentasi pekerja asing & laporan (jadikan bahan latihan nanti)."],
+  ["pt04", 2026, "Mula sekarang", "Kewangan", "Buka akaun simpanan kecemasan berasingan & mula simpanan emas bulanan."],
+  ["pt05", 2027, "Q1–Q2", "Kerjaya", "Temuduga pekerja asing Bangladesh & Indonesia — catat proses, cabaran & penyelesaian sebagai bahan modul latihan."],
+  ["pt06", 2027, "Q2–Q3", "Kemahiran", "Lengkapkan sijil Train The Trainer (TTT) — syarat trainer bertauliah HRD Corp."],
+  ["pt07", 2027, "Q4", "Kerjaya", "Daftar sebagai trainer HRD Corp (semak syarat terkini di laman rasmi HRD Corp)."],
+  ["pt08", 2027, "Cadangan", "Kemahiran", "Public speaking awal: sertai Toastmasters atau kelab pengucapan awam."],
+  ["pt09", 2028, "Q1", "Niaga", "Siapkan 2 modul: \"AI untuk HR\" dan \"Pengurusan Pekerja Asing dari A–Z\"."],
+  ["pt10", 2028, "Q2–Q4", "Niaga", "Sesi latihan pertama: latihan AI & pengurusan pekerja asing — sasaran 1–2 sesi sebulan."],
+  ["pt11", 2028, "Sepanjang tahun", "Kemahiran", "Training public speaker: asah penyampaian & keyakinan di hadapan peserta."],
+  ["pt12", 2028, "Penting", "Niaga", "Rakam setiap sesi latihan — bahan e-learning 2029."],
+  ["pt13", 2028, "Pelarasan", "Niaga", "Mula bina kandungan e-learning dari 2028 (RM5,000 pasif dalam setahun sahaja sangat mencabar)."],
+  ["pt14", 2029, "Q1", "Kerjaya", "Daftar ahli MIHRM & mohon menjadi trainer separuh masa."],
+  ["pt15", 2029, "Q1–Q2", "Niaga", "Lancarkan kursus e-learning pertama (Udemy, Teachable atau laman sendiri)."],
+  ["pt16", 2029, "Q3–Q4", "Teknologi", "Bangunkan app: cth. sistem dokumen pekerja asing atau alat HR berasaskan AI."],
+  ["pt17", 2029, "Hujung 2029", "Kewangan", "Pendapatan pasif RM1,000–RM2,000 sebulan.", "pasif2029"],
+  ["pt18", 2030, "Sasaran", "Kewangan", "Pendapatan pasif RM5,000 sebulan.", "pasif"],
+  ["pt19", 2030, "Sasaran", "Kewangan", "Gaji RM6,000 sebulan.", "gaji"],
+  ["pt20", 2030, "Sasaran", "Kewangan", "Simpanan kecemasan RM30,000.", "simpanan"],
+  ["pt21", 2030, "Sasaran", "Kewangan", "Simpanan emas 30 gram.", "emas"]
+];
+const OLD_TPL_TITLES = ["Ambil kursus TTT (Train the Trainer)", "Lengkapkan dana kecemasan 6 bulan", "Daftar sebagai jurulatih bertauliah HRD Corp",
+  "Bina modul latihan pematuhan pekerja asing (passport, PLKS, CIDB)", "Jalankan 6 sesi latihan berbayar setahun",
+  "Lancar app/produk AI pertama untuk pematuhan pekerja asing", "Pendapatan pasif capai 50% sasaran", "Pendapatan pasif capai sasaran bulanan penuh"];
+const PLAN_START = "2026-12", PLAN_MONTHLY_RM = 625, PLAN_MONTHLY_G = 0.625;
+// Susun matlamat ikut pelan: buang templat lama yang belum selesai, tambah tindakan pelan yang belum ada,
+// tetapkan sasaran (pasif 5,000, gaji 6,000, kecemasan 15k+15k menjelang 2030, emas 30 g). Matlamat sendiri kekal.
+function applyPlan(S, now, mkId) {
+  const removed = S.goals.filter(g => !g.tpl && !g.done && OLD_TPL_TITLES.includes(g.title));
+  S.goals = S.goals.filter(g => !removed.includes(g));
+  const have = new Set(S.goals.map(g => g.tpl).filter(Boolean));
+  let added = 0;
+  PLAN_TPL.forEach(([tpl, year, when, area, title, metric], i) => {
+    if (have.has(tpl)) return;
+    const g = { id: mkId(), year, area, title, done: false, when, tpl, ord: i };
+    if (metric) g.metric = metric;
+    S.goals.push(g); added++;
+  });
+  S.settings.targetPassive = 5000;
+  S.settings.targetSalary = 6000;
+  Object.assign(S.asb, { s1: 15000, s1by: "2028-11" });
+  Object.assign(S.th, { target: 15000, by: "2030-12" });
+  Object.assign(S.gold, { target: 30, by: "2030-12" });
+  return { added, removed: removed.length };
+}
+const planApplied = S => S.goals.some(g => g.tpl);
+// Kemajuan sasaran 2030 daripada data app.
+function planMetrics(S) {
+  const inc = t => sum(S.incomes.filter(i => i.type === t), i => i.amount);
+  return {
+    pasif: { have: inc("pasif"), target: Number(S.settings.targetPassive) || 5000 },
+    pasif2029: { have: inc("pasif"), target: 1000 },
+    gaji: { have: inc("aktif"), target: Number(S.settings.targetSalary) || 6000 },
+    simpanan: { have: asbHave(S) + thHave(S), target: (Number(S.asb.s1) || 0) + (Number(S.th.target) || 0) },
+    emas: { have: goldHave(S), target: Number(S.gold.target) || 30 }
+  };
+}
+// Simpanan bulan m (rekod simpanan): dana kecemasan (ASB+TH, bersih) & gram emas.
+function monthlySaving(S, m) {
+  const ds = S.deposits.filter(d => String(d.date).slice(0, 7) === m);
+  const sgn = d => d.dir === "out" ? -1 : 1;
+  return {
+    rm: Math.round(sum(ds.filter(d => d.kind === "asb" || d.kind === "th"), d => sgn(d) * (Number(d.amount) || 0)) * 100) / 100,
+    g: Math.round(sum(ds.filter(d => d.kind === "emas"), d => sgn(d) * (Number(d.grams) || 0)) * 1000) / 1000
+  };
+}
+// Semakan setiap Jun & Disember. due = bulan semasa ialah bulan semakan & belum direkod.
+function nextReview(S, today) {
+  const cur = ym(today), y = today.getFullYear(), mo = today.getMonth() + 1;
+  const done = new Set(S.reviews.map(r => r.ym));
+  if ((mo === 6 || mo === 12) && !done.has(cur)) return { ym: cur, due: true };
+  const nxt = mo < 6 ? `${y}-06` : mo < 12 ? `${y}-12` : `${y + 1}-06`;
+  return { ym: done.has(cur) || mo === 6 || mo === 12 ? (mo === 6 ? `${y}-12` : mo === 12 ? `${y + 1}-06` : nxt) : nxt, due: false };
+}
+
 // ---------- pengesan notifikasi telefon (bank / e-wallet) ----------
 // Pulangkan { type: "in"|"out", amount, merchant, cat } atau null jika bukan transaksi / tidak pasti.
 const N_ABAI = /(\bOTP\b|\bTAC\b|kod pengesahan|verification code|promo|cashback|dapatkan|jom |win |menang|offer|tawaran|voucher|baucar|reload|top[ -]?up|tambah nilai|own account|akaun sendiri|antara akaun|balance is|baki anda ialah|statement|penyata|reminder|peringatan|due date|tarikh akhir|failed|gagal|unsuccessful|tidak berjaya|declined|ditolak|pending|log ?in|log masuk|new device|peranti baru)/i;
@@ -609,8 +699,8 @@ function isDupAuto(S, type, amount, date, myPrefix) {
 }
 
 // ---------- tong sampah & pulih ----------
-const LISTS = ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits", "budgets"];
-const LIST_LABEL = { incomes: "Pendapatan", commitments: "Komitmen", debts: "Hutang", tx: "Transaksi", goals: "Matlamat", ventures: "Projek niaga", cards: "Kad kredit", cardTx: "Rekod kad", deposits: "Rekod simpanan", budgets: "Bajet", steps: "Langkah projek" };
+const LISTS = ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits", "budgets", "reviews"];
+const LIST_LABEL = { incomes: "Pendapatan", commitments: "Komitmen", debts: "Hutang", tx: "Transaksi", goals: "Matlamat", ventures: "Projek niaga", cards: "Kad kredit", cardTx: "Rekod kad", deposits: "Rekod simpanan", budgets: "Bajet", reviews: "Semakan", steps: "Langkah projek" };
 function purgeTrash(S, now, days = 30) {
   for (const [k, e] of Object.entries(S.trash)) if (!e || now - (Number(e.at) || 0) > days * 864e5) delete S.trash[k];
 }
@@ -671,6 +761,7 @@ function describeItem(list, it) {
     case "ventures": return it.name;
     case "cards": return `${it.name} · had ${rm(it.limit)}`;
     case "steps": return it.t;
+    case "reviews": return `Semakan ${it.ym}: ${String(it.notes || "").slice(0, 60)}`;
     case "budgets": return `${it.cat} · ${rm(it.amount)}/bln`;
     case "deposits": return `${{ emas: "Emas", asb: "ASB", th: "Tabung Haji" }[it.kind] || it.kind} ${it.dir === "out" ? "keluar" : "simpan"} ${it.kind === "emas" ? (Number(it.grams) || 0) + " g" + (it.amount ? " (" + rm(it.amount) + ")" : "") : rm(it.amount)} · ${it.date}`;
     default: return String(it.name || it.title || it.id);
@@ -1182,6 +1273,11 @@ function nextSteps(c) {
     else if (e.stage === 2) s.push(`Dana kecemasan stage 2: tambah ${RM(e.s2.need)} lagi dalam Tabung Haji${isFinite(e.s2.perMonth) ? ` (${RM(e.s2.perMonth)} sebulan)` : ""}.`); }
   for (const cd of S.cards) { const k = cardCalc(S, cd, today()); if (k.util >= 30) s.push(`Kad ${cd.name} guna ${k.util.toFixed(0)}% had — cuba kurangkan bawah 30%.`); }
   for (const r of budgetStatus(S, ym(today())).rows) if (r.level === "lebih") s.push(`Bajet ${r.cat} bulan ini lebih ${RM(-r.left)}.`);
+  { const rv = nextReview(S, today()); if (rv.due) s.push(`Semakan 6 bulan ${fmtYM(rv.ym)}: nilai apa yang tercapai & apa perlu diubah (tab Pelan 2030).`); }
+  if (ym(today()) >= PLAN_START) { const ms = monthlySaving(S, ym(today()));
+    if (ms.rm < PLAN_MONTHLY_RM) s.push(`Simpanan kecemasan bulan ini ${RM(ms.rm)} / ${RM(PLAN_MONTHLY_RM)}.`);
+    if (ms.g < 0.6) s.push(`Emas bulan ini ${fmtG(ms.g)} / 0.6–0.7 g.`); }
+  if (!planApplied(S)) s.push("Susun tab Pelan 2030 ikut Pelan Tindakan 2026–2030.");
   if (!S.goals.length) s.push("Isi matlamat tahunan di tab Pelan 2030 (guna templat).");
   const g = S.goals.filter(x => !x.done).sort((a, b) => a.year - b.year)[0];
   if (g) s.push(`Matlamat ${g.year}: ${g.title}`);
@@ -1213,6 +1309,7 @@ function vRingkasan() {
     <div class="small muted" style="margin-top:8px">${sbUser ? `☁ ${esc(sbUser.email)} · <span id="syncMsg2">${esc(syncMsg || "")}</span>` : `<button class="sm" data-tab="tetapan" style="background:rgba(255,255,255,.16);color:var(--on-primary);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.5)">Log masuk untuk segerak antara telefon</button>`}
     </div>
     <div class="stamps" aria-label="Tahun pelan">${stamps}</div>
+    ${(() => { const p = PLAN_YEARS.find(x => x.y === t.getFullYear()); return p ? `<p class="small" style="margin:10px 0 0;opacity:.9">Tahun ${p.n}/5 · <b>${p.theme}</b></p>` : ""; })()}
   </section>
 
   <section class="card">
@@ -1658,36 +1755,104 @@ function vHutang() {
   </section>`;
 }
 
-const GOAL_TPL = [
-  [2026, "Kerjaya", "Ambil kursus TTT (Train the Trainer)"],
-  [2026, "Kewangan", "Lengkapkan dana kecemasan 6 bulan"],
-  [2027, "Kerjaya", "Daftar sebagai jurulatih bertauliah HRD Corp"],
-  [2027, "Niaga", "Bina modul latihan pematuhan pekerja asing (passport, PLKS, CIDB)"],
-  [2028, "Niaga", "Jalankan 6 sesi latihan berbayar setahun"],
-  [2028, "Teknologi", "Lancar app/produk AI pertama untuk pematuhan pekerja asing"],
-  [2029, "Kewangan", "Pendapatan pasif capai 50% sasaran"],
-  [2030, "Kewangan", "Pendapatan pasif capai sasaran bulanan penuh"]
-];
+const WHEN_OPTS = ["", "Q1", "Q2", "Q3", "Q4", "Q1–Q2", "Q2–Q3", "Q2–Q4", "Q3–Q4", "Sepanjang tahun", "Mula sekarang", "Sasaran"];
+let reviewOpen = false;
+function goalLi(g, M) {
+  const m = g.metric && M[g.metric];
+  const pct = m && m.target ? Math.min(100, m.have / m.target * 100) : 0;
+  const fmt = v => g.metric === "emas" ? fmtG(v) : RM(v);
+  return `<li style="align-items:flex-start"><input type="checkbox" ${g.done ? "checked" : ""} data-act="goaldone" data-id="${g.id}" aria-label="Tanda selesai" style="margin-top:3px">
+    <div class="grow"><div style="${g.done ? "text-decoration:line-through;opacity:.6" : ""}">${esc(g.title)}</div>
+      <div class="row" style="gap:6px;margin-top:4px">${g.when ? `<span class="pill warn">${esc(g.when)}</span>` : ""}<span class="pill">${esc(g.area)}</span>${m ? `<span class="small muted">${fmt(m.have)} / ${fmt(m.target)}${g.metric.startsWith("pasif") || g.metric === "gaji" ? " sebulan" : ""}</span>` : ""}</div>
+      ${m ? `<div style="margin-top:6px">${bar(pct, g.metric === "emas" ? "gold" : "")}</div>` : ""}
+    </div>${del("goals", g.id)}</li>`;
+}
 function vPelan() {
-  const years = [2026, 2027, 2028, 2029, 2030];
+  const t = today(), cy = t.getFullYear(), M = planMetrics(S);
   const done = S.goals.filter(g => g.done).length;
+  const yearPct = y => { const gs = S.goals.filter(g => +g.year === y); return gs.length ? gs.filter(g => g.done).length / gs.length * 100 : 0; };
+  const curM = ym(t), ms = monthlySaving(S, curM);
+  const started = curM >= PLAN_START;
+  const left = Math.max(1, (2030 - cy) * 12 + (12 - (t.getMonth() + 1)) + 1);
+  const needRM = Math.max(0, (M.simpanan.target - M.simpanan.have) / left), needG = Math.max(0, (M.emas.target - M.emas.have) / left);
+  const rv = nextReview(S, t);
+  const showOld = !planApplied(S);
   return `
-  <section class="card">
-    <div class="row between"><h2>Pelan 2030</h2><span class="pill">${done}/${S.goals.length} selesai</span></div>
-    ${bar(S.goals.length ? done / S.goals.length * 100 : 0)}
-    <p class="small muted">Laluan cadangan: TTT → HRD Corp → modul pematuhan → app AI → pendapatan pasif.</p>
-    <button data-act="goaltpl">Guna templat cadangan</button>
+  <section class="card hero">
+    <p class="muted small" style="margin:0">Pelan tindakan peribadi</p>
+    <h1 style="margin:.2rem 0 .1rem">Pelan Tindakan 2026–2030</h1>
+    <p class="muted small" style="margin:0">Dari kemahiran AI dan pengurusan pekerja asing ke kestabilan kewangan.</p>
+    <div class="row between small" style="margin-top:10px"><span>${done}/${S.goals.length} tindakan selesai</span><span>${S.goals.length ? Math.round(done / S.goals.length * 100) : 0}%</span></div>
+    <div class="bar" style="background:rgba(255,255,255,.2);border-color:transparent"><i style="width:${S.goals.length ? done / S.goals.length * 100 : 0}%;background:#fff"></i></div>
   </section>
-  ${years.map(y => {
-    const gs = S.goals.filter(g => +g.year === y);
-    return `<section class="card"><h2>${y}</h2>${gs.length ? `<ul class="list">${gs.map(g => `<li><input type="checkbox" ${g.done ? "checked" : ""} data-act="goaldone" data-id="${g.id}" aria-label="Tanda selesai"><div class="grow"><div style="${g.done ? "text-decoration:line-through;opacity:.6" : ""}">${esc(g.title)}</div><span class="pill">${esc(g.area)}</span></div>${del("goals", g.id)}</li>`).join("")}</ul>` : `<p class="empty">Belum ada matlamat.</p>`}</section>`;
-  }).join("")}
+
+  ${showOld ? `<section class="card" style="border-color:var(--amber)">
+    <h2>Susun ikut Pelan Tindakan 2026–2030</h2>
+    <p class="small muted">Tambah ${PLAN_TPL.length} tindakan dari pelan anda (ikut tahun & suku tahun), ganti templat lama yang belum selesai, dan tetapkan sasaran 2030: pasif RM5,000, gaji RM6,000, simpanan kecemasan RM30,000 (ASB RM15,000 menjelang Nov 2028 + Tabung Haji RM15,000 menjelang Dis 2030) dan emas 30 g. Matlamat yang anda tambah sendiri tidak disentuh.</p>
+    <button class="primary" data-act="applyplan">Susun sekarang</button>
+  </section>` : ""}
+
   <section class="card">
-    <h2>Tambah matlamat</h2>
+    <h2>Peta perjalanan 5 tahun</h2>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">${PLAN_YEARS.map(p => `<a href="#tahun-${p.y}" style="text-decoration:none;color:inherit;display:block;border-radius:10px;padding:8px 6px;background:${p.y === cy ? "var(--red)" : "var(--paper)"};color:${p.y === cy ? "#fff" : "var(--ink)"}">
+      <div style="font:700 .95rem 'Bricolage Grotesque',sans-serif">${p.y}</div><div style="font-size:.7rem;line-height:1.2;min-height:2.4em;opacity:.9">${p.short}</div>
+      <div style="height:4px;border-radius:2px;background:${p.y === cy ? "rgba(255,255,255,.3)" : "var(--line)"};margin-top:6px"><i style="display:block;height:100%;border-radius:2px;width:${yearPct(p.y)}%;background:${p.y === cy ? "#fff" : "var(--teal)"}"></i></div></a>`).join("")}</div>
+  </section>
+
+  <section class="card">
+    <h2>Sasaran 2030</h2>
+    ${[["Pendapatan pasif", M.pasif, "sebulan", ""], ["Gaji", M.gaji, "sebulan", ""], ["Simpanan kecemasan", M.simpanan, "", ""], ["Simpanan emas", M.emas, "", "g"]].map(([l, m, per, u]) => {
+      const pct = m.target ? Math.min(100, m.have / m.target * 100) : 0;
+      return `<div style="margin-top:10px"><div class="row between small"><span>${l}</span><span>${u ? fmtG(m.have) + " / " + fmtG(m.target) : RM(m.have) + " / " + RM(m.target)}${per ? " " + per : ""} · ${pct.toFixed(0)}%</span></div>${bar(pct, u ? "gold" : "")}</div>`; }).join("")}
+    <p class="small muted" style="margin-top:10px">Hujung 2029: pendapatan pasif RM1,000–RM2,000 sebulan (${RM(M.pasif.have)} sekarang). Pasif & gaji diambil dari <b>Sumber pendapatan</b> (jenis pasif / aktif).</p>
+  </section>
+
+  <section class="card">
+    <h2>Simpanan bulanan ${started ? fmtYM(curM) : "(mula Dis 2026)"}</h2>
+    <div class="row between small"><span>Dana kecemasan (ASB + Tabung Haji)</span><span>${RM(ms.rm)} / ${RM(PLAN_MONTHLY_RM)}</span></div>
+    ${bar(Math.min(100, ms.rm / PLAN_MONTHLY_RM * 100), "amber")}
+    <div class="row between small" style="margin-top:10px"><span>Emas</span><span>${fmtG(ms.g)} / 0.6–0.7 g</span></div>
+    ${bar(Math.min(100, ms.g / PLAN_MONTHLY_G * 100), "gold")}
+    <p class="small muted" style="margin-top:8px">Pelan: RM625 sebulan → RM30,000, dan ±7.5 g setahun → 30 g menjelang 2030 (±48 bulan dari Dis 2026). Dari baki semasa, perlu <b>${RM(needRM)}</b> dan <b>${fmtG(needG)}</b> sebulan untuk ${left} bulan lagi. Rekod di <b>Kewangan → Dana kecemasan / Sasaran emas</b>.</p>
+    <p class="small muted">💡 Bila gaji meningkat, naikkan juga jumlah simpanan secara berperingkat.</p>
+  </section>
+
+  <section class="card" ${rv.due ? 'style="border-color:var(--red)"' : ""}>
+    <div class="row between"><h2>Semakan 6 bulan</h2>${rv.due ? `<span class="pill bad">Bulan ini</span>` : `<span class="pill">${fmtYM(rv.ym)}</span>`}</div>
+    <p class="small muted">Nilai setiap Jun dan Disember: apa yang tercapai dan apa yang perlu diubah.</p>
+    ${rv.due || reviewOpen ? `<form class="add" data-form="review" data-ym="${rv.due ? rv.ym : curM}">
+      <label style="grid-column:1/-1">Catatan semakan ${fmtYM(rv.due ? rv.ym : curM)}<textarea name="notes" rows="4" required placeholder="Apa yang tercapai? Apa yang perlu diubah?"></textarea></label>
+      <button class="primary">Simpan semakan</button></form>` : `<button class="ghost sm" data-act="reviewopen">Tulis semakan sekarang</button>`}
+    ${S.reviews.length ? `<ul class="list" style="margin-top:8px">${S.reviews.slice().sort((a, b) => String(b.ym).localeCompare(String(a.ym))).map(r => `<li style="align-items:flex-start"><div class="grow"><b class="small">${fmtYM(r.ym)}</b><div class="small" style="white-space:pre-wrap">${esc(r.notes)}</div></div>${del("reviews", r.id)}</li>`).join("")}</ul>` : ""}
+  </section>
+
+  ${PLAN_YEARS.map(p => {
+    const gs = S.goals.filter(g => +g.year === p.y).sort((a, b) => (a.done - b.done) || ((a.ord ?? 99) - (b.ord ?? 99)));
+    const d = gs.filter(g => g.done).length;
+    return `<section class="card" id="tahun-${p.y}" ${p.y === cy ? 'style="border-color:var(--red)"' : ""}>
+      <div class="small muted">Tahun ${p.n} daripada 5${p.y === cy ? " · tahun semasa" : ""}</div>
+      <div class="row between"><h2 style="margin:0">${p.y} · ${p.theme}</h2><span class="pill ${gs.length && d === gs.length ? "ok" : ""}">${d}/${gs.length}</span></div>
+      ${gs.length ? `<ul class="list" style="margin-top:6px">${gs.map(g => goalLi(g, M)).join("")}</ul>` : `<p class="empty">Belum ada tindakan.</p>`}
+    </section>`;
+  }).join("")}
+
+  <section class="card">
+    <details><summary>Pelarasan yang dicadangkan</summary>
+      <ol class="small" style="padding-left:18px">
+        <li><b>Mulakan e-learning lebih awal</b> — bina kandungan dari 2028. RM5,000 pasif dalam masa setahun sahaja sangat mencabar.</li>
+        <li><b>Public speaking sebelum melatih</b> — anda mula melatih pada 2028, jadi pupuk kemahiran ini dari 2027.</li>
+        <li><b>Simpan dan beli emas sekarang</b> — jangan tunggu 2030; sasaran hanya tercapai melalui konsistensi bulanan.</li>
+        <li><b>Semak kemajuan setiap 6 bulan</b> — setiap Jun dan Disember.</li>
+      </ol></details>
+  </section>
+
+  <section class="card">
+    <h2>Tambah tindakan</h2>
     <form class="add" data-form="goal">
-      <label>Tahun<select name="year">${years.map(y => `<option>${y}</option>`).join("")}</select></label>
-      <label>Bidang<select name="area"><option>Kerjaya</option><option>Kewangan</option><option>Niaga</option><option>Teknologi</option><option>Peribadi</option></select></label>
-      <label style="grid-column:1/-1">Matlamat<input name="title" required></label>
+      <label>Tahun<select name="year">${PLAN_YEARS.map(p => `<option ${p.y === cy ? "selected" : ""}>${p.y}</option>`).join("")}</select></label>
+      <label>Bila<select name="when">${WHEN_OPTS.map(w => `<option value="${w}">${w || "—"}</option>`).join("")}</select></label>
+      <label>Bidang<select name="area"><option>Kerjaya</option><option>Kemahiran</option><option>Kewangan</option><option>Niaga</option><option>Teknologi</option><option>Peribadi</option></select></label>
+      <label style="grid-column:1/-1">Tindakan<input name="title" required></label>
       <button class="primary">Tambah</button>
     </form>
   </section>`;
@@ -2019,7 +2184,8 @@ document.addEventListener("submit", e => {
       S.savings = num(d.savings); toast("Disimpan"); break;
     case "commitment": S.commitments.push({ id: uid(), name: d.name.trim(), amount: num(d.amount), day: num(d.day) }); break;
     case "debt": S.debts.push({ id: uid(), name: d.name.trim(), balance: num(d.balance), rate: num(d.rate), payment: num(d.payment), day: num(d.day) }); break;
-    case "goal": S.goals.push({ id: uid(), year: num(d.year), area: d.area, title: d.title.trim(), done: false }); break;
+    case "goal": S.goals.push({ id: uid(), year: num(d.year), area: d.area, title: d.title.trim(), done: false, ...(d.when ? { when: d.when } : {}) }); break;
+    case "review": S.reviews.push({ id: uid(), ym: f.dataset.ym, notes: d.notes.trim(), at: Date.now() }); reviewOpen = false; toast("Semakan " + fmtYM(f.dataset.ym) + " disimpan"); break;
     case "venture": S.ventures.push({ id: uid(), name: d.name.trim(), kind: d.kind.trim() || "Projek", target: num(d.target), stage: 0, steps: VENTURE_STEPS.map(t => ({ t, done: false })) }); break;
     case "step": { const v = S.ventures.find(x => x.id === f.dataset.id); if (v) v.steps.push({ t: d.t.trim(), done: false }); break; }
     case "card": {
@@ -2078,11 +2244,14 @@ document.addEventListener("click", e => {
       if (b.dataset.kind === "hutang") { const d = S.debts.find(x => x.id === id); if (d) d.balance = Math.max(0, num(d.balance) - amt); }
       toast("Direkod sebagai transaksi"); commit(); break;
     }
-    case "goaltpl": {
-      const have = new Set(S.goals.map(g => g.title));
-      GOAL_TPL.forEach(([year, area, title]) => { if (!have.has(title)) S.goals.push({ id: uid(), year, area, title, done: false }); });
-      toast("Templat ditambah"); commit(); break;
+    case "applyplan": {
+      const snap = JSON.parse(JSON.stringify(S));
+      const r = applyPlan(S, Date.now(), uid);
+      commit();
+      toastUndo(`Pelan disusun: ${r.added} tindakan ditambah${r.removed ? ", " + r.removed + " templat lama diganti" : ""}`, () => { S = normalize(snap); commit(); toast("Dikembalikan"); });
+      break;
     }
+    case "reviewopen": reviewOpen = true; render(); break;
     case "venturetpl": { const [name, kind, target] = VENTURE_TPL[num(b.dataset.i)]; S.ventures.push({ id: uid(), name, kind, target, stage: 0, steps: VENTURE_STEPS.map(t => ({ t, done: false })) }); commit(); break; }
     case "stage": { const v = S.ventures.find(x => x.id === id); if (v) { v.stage = Math.max(0, Math.min(4, v.stage + num(b.dataset.d))); commit(); } break; }
     case "delstep": {

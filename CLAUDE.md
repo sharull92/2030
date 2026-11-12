@@ -8,18 +8,18 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 ## Fail
 - `pelan-2030.html` — app lengkap dalam satu fail (HTML + CSS + JS vanila, tiada build step). Buka terus dalam pelayar.
 
-## Ciri sedia ada (6 tab, nav bawah)
+## Ciri sedia ada (nav bawah: Ringkasan, Kewangan, Hutang/Kad, Pelan 2030, Lagi → Niaga & Tetapan; reka bentuk baru pengguna 5 Nov 2026 — guna token `--bg/--surface/--pos/--neg/--accent`)
 1. **Ringkasan** — hero "cop passport" 2026–2030 + kiraan hari; **Ringkasan ikut tahun** (pilih tahun atau "Semua tahun" = `yearSummary(S, 0, …)`; `yearSummary`: pendapatan = transaksi "Masuk" sebenar SAHAJA (jangan campur pendapatan dirancang — pengguna nampak berganda); jika bulan semasa belum ada Masuk, pendapatan dirancang ditunjuk sebagai "dijangka" + "Dijangka hujung bulan"; duit keluar = tx keluar kecuali "Kad kredit" + belanja kad; komitmen bulan semasa belum "Dah bayar" → baki dijangka; pecahan ikut kategori), DSR (<40% sihat, 40–60% berhati-hati, >60% tinggi); campuran pendapatan aktif/sampingan/pasif; kemajuan sasaran pasif; peringatan tarikh bayar 14 hari (butang "Dah bayar" auto-rekod transaksi); graf trend: 6 atau 12 bulan terakhir atau Jan–Dis tahun dipilih (`trendMonths` + `monthFlow`: keluar termasuk belanja kad, kecuali bayaran bil kad), dengan jumlah tempoh (SVG inline); ringkasan emas & dana kecemasan; langkah seterusnya.
 2. **Kewangan** — **Bajet bulanan** (`budgetStatus`/`spendByCat`: kategori dipadan `catKey` tanpa kira huruf besar; belanja = tx Keluar kecuali "Kad kredit" + belanja kad; ≥80% hampir, >100% lebih; belanja tanpa bajet + butang tambah cepat; `budgetWarn` toast selepas rekod; kad ringkas di Ringkasan; bahagian dalam PDF & helaian Excel "Bajet"); **Laporan & eksport**: **Excel** (`excelSheets` data tulen → 5 helaian Ringkasan/Transaksi/Kad kredit/Simpanan/Komitmen & hutang; SheetJS `xlsx@0.18.5` dimuat dari jsDelivr hanya bila diklik; tarikh = tarikh Excel, RM `#,##0.00`, gram `0.000`; bulan dipilih atau semua data; luar talian → CSV transaksi dengan BOM); **PDF** (`monthReport` data tulen + `reportHTML` ke `#printArea`, `@media print` A4, `window.print()` → "Simpan sebagai PDF"; `document.title` = nama fail); sumber pendapatan; rekod transaksi ikut bulan atau "Semua bulan" (`monthSelect` + tajuk bulan `withMonthHeads`; sama untuk rekod kad); **rekod simpanan sikit-sikit** untuk emas (beli/jual, gram 3 perpuluhan, harga dibayar) dan ASB/Tabung Haji (simpan/keluarkan) — jumlah = baki awal + rekod (`depTotal`, `goldHave`, `asbHave`, `thHave`; JANGAN baca `.have` terus); pilihan "Tolak dari baki duit" cipta tx Keluar berpaut `link: "dep:<id>"` (padam rekod → tx ikut ke tong sampah, Undo pulih kedua-dua); sasaran emas (gram); dana kecemasan berperingkat: Stage 1 ASB RM15,000 → Stage 2 Tabung Haji RM15,000 (`emergencyCalc`), % dihadkan per stage, tunjuk berapa bulan komitmen+hutang boleh ditampung (termasuk `savings` = simpanan tunai lain).
 3. **Hutang/Kad** — kad kredit (borang Transaksi ada "Bayar guna" Tunai/debit atau kad → belanja kad masuk `cardTx` dan dipapar dalam senarai Transaksi dengan 💳; status setiap belanja kad "Sudah bayar / Separa / Belum bayar" ikut `cardAlloc` (bayaran tutup belanja paling lama dahulu); `cardDueLine` + `nextDue` tunjuk baki belum bayar & tarikh akhir di Hutang/Kad dan kad "Kad kredit" di Ringkasan; bayaran bil kad (tx kategori "Kad kredit") dipapar tetapi tidak dikira dalam Keluar; had, baki, % penggunaan <30% sihat, belanja bulan ikut kategori, bayaran minimum ≈5%/RM50, rekod belanja & bayaran; bayaran kad juga direkod dalam `tx`); komitmen bulanan (tarikh bayar); hutang disusun ikut faedah tertinggi (avalanche) dengan anggaran tarikh selesai.
-4. **Pelan 2030** — matlamat ikut tahun, templat cadangan (TTT → HRD Corp → modul pematuhan → app AI → pasif).
+4. **Pelan 2030** — disusun ikut PDF pengguna "Pelan Tindakan 2026–2030": `PLAN_YEARS` (tema setiap tahun: Asas Kemahiran & Kelulusan → Pelaksanaan & Kelayakan Trainer → Mula Menjadi Trainer → Rangkaian & Pendapatan Pasif → Kestabilan Kewangan), `PLAN_TPL` (21 tindakan ikut suku tahun, `tpl` pt01–pt21; 2030 ada `metric` pasif/gaji/simpanan/emas dengan kemajuan automatik `planMetrics`). Butang "Susun ikut Pelan Tindakan" → `applyPlan()` (ganti templat lama belum selesai `OLD_TPL_TITLES`, kekal matlamat sendiri, tetapkan pasif 5,000, gaji 6,000, ASB 15k menjelang 2028-11, TH 15k menjelang 2030-12, emas 30 g menjelang 2030-12; Undo salinan penuh). Peta perjalanan 5 tahun; Sasaran 2030; simpanan bulanan RM625 + 0.6–0.7 g mulai Dis 2026 (`monthlySaving`); semakan setiap Jun & Disember (`nextReview`, `S.reviews`); 4 pelarasan dicadangkan. Tema tahun semasa di hero Ringkasan.
 5. **Niaga** — projek dengan peringkat Idea → Validasi → Bina → Lancar → Skala + senarai langkah proses; templat idea.
 6. **Tetapan** — penyegerakan awan (atas); nama, sasaran pasif; **Item terpadam** (tong sampah 30 hari + "Cari item terpadam" dalam salinan lama: sandaran-sebelum-kongsi, jadual `plans` lama, `plan_history`); notifikasi tarikh bayar (N hari sebelum); eksport kalendar .ics; pasang app; penyegerakan awan; sandaran/pulih JSON, padam semua.
 
 ## Model data (satu objek `S`)
 ```js
 {
-  v: 7,
+  v: 8,
   updatedAt: Number,   // ms, untuk penyegerakan awan (v2)
   settings: { name, targetPassive, emergencyMonths, notify, notifyDays },
   savings: Number,
@@ -27,7 +27,9 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
   commitments: [{ id, name, amount, day }],
   debts:       [{ id, name, balance, rate, payment, day }],
   tx:          [{ id, date: "YYYY-MM-DD", type: "in"|"out", cat, amount, note, link? }],
-  goals:       [{ id, year, area, title, done }],
+  goals:       [{ id, year, area, title, done, when?, tpl?, metric?, ord? }],
+  reviews:     [{ id, ym, notes, at }],   // v8: semakan 6 bulan
+  settings.targetSalary                   // v8: sasaran gaji (6000)
   ventures:    [{ id, name, kind, target, stage: 0-4, steps: [{ t, done }] }],
   cards:       [{ id, name, limit, dueDay, rate }],                       // v3
   cardTx:      [{ id, cardId, date, type: "belanja"|"bayar"|"awal", amount, cat, note }],  // v3

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets, budgetStatus, catKey };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets, budgetStatus, catKey, applyPlan, planApplied, planMetrics, monthlySaving, nextReview, PLAN_TPL };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -73,7 +73,7 @@ test("normalize kekalkan data lama dan isi lalai", () => {
   assert.equal(o.gold.have, 5);
   assert.equal(o.gold.target, 30);
   assert.deepEqual(o.tx, []);
-  assert.equal(o.v, 7);
+  assert.equal(o.v, 8);
   assert.deepEqual(o.cards, []);
   assert.deepEqual(o.cardTx, []);
   assert.equal(o.updatedAt, 0);
@@ -119,7 +119,7 @@ test("upcoming: kad kredit dengan baki muncul, tanpa baki tidak", () => {
 
 test("normalize: data v2 dinaik taraf ke v3 tanpa hilang data", () => {
   const o = L.normalize({ v: 2, updatedAt: 5, incomes: [{ id: "a", amount: 1 }] });
-  assert.equal(o.v, 7);
+  assert.equal(o.v, 8);
   assert.equal(o.updatedAt, 5);
   assert.equal(o.incomes.length, 1);
 });
@@ -163,7 +163,7 @@ test("dana kecemasan: stage 1 ASB → stage 2 Tabung Haji", () => {
 
 test("migrasi v3 → v4: data ASB lama dikekalkan, tarikh stage 2 dibawa ke Tabung Haji", () => {
   const o = L.normalize({ v: 3, asb: { have: 7000, s1: 15000, s2: 30000, s1by: "2027-06", s2by: "2029-12" }, savings: 2000 });
-  assert.equal(o.v, 7);
+  assert.equal(o.v, 8);
   assert.equal(o.asb.have, 7000);
   assert.equal(o.asb.s1by, "2027-06");
   assert.equal(o.asb.s2, 30000);
@@ -319,7 +319,7 @@ test("tong sampah: padam → pulih (kad bersama rekodnya, langkah projek)", () =
 
 test("tong sampah: dibuang selepas 30 hari; data v4 dapat trash kosong", () => {
   const S = L.normalize({ v: 4, tx: [{ id: "a" }, { id: "b" }] });
-  assert.equal(S.v, 7); assert.deepEqual(S.trash, {});
+  assert.equal(S.v, 8); assert.deepEqual(S.trash, {});
   L.trashItem(S, "tx", "a", 0);
   L.trashItem(S, "tx", "b", 31 * 864e5);   // purge berlaku semasa padam kedua
   assert.deepEqual(Object.keys(S.trash), ["b"]);
@@ -397,7 +397,7 @@ test("rekod simpanan: jumlah = baki awal + rekod (emas gram 3 perpuluhan)", () =
       { id: "t1", kind: "th", dir: "in", date: "2026-11-03", amount: 50 },
       { id: "t2", kind: "th", dir: "out", date: "2026-11-04", amount: 20 }
     ] });
-  assert.equal(S.v, 7);
+  assert.equal(S.v, 8);
   assert.equal(L.goldHave(S), 3.275);            // 2 + 1.025 + 0.5 − 0.25
   assert.equal(L.asbHave(S), 8750.5);
   assert.equal(L.thHave(S), 1030);
@@ -454,7 +454,7 @@ test("bajet: belanja tunai + kad ikut kategori (tanpa kira huruf besar), bil kad
       { date: "2026-11-01", type: "in", cat: "Gaji", amount: 4782 }
     ],
     cardTx: [{ cardId: "k", date: "2026-11-03", type: "belanja", amount: 320, cat: "Minyak" }, { cardId: "k", date: "2026-11-01", type: "awal", amount: 5000, cat: "Baki awal" }] });
-  assert.equal(S.v, 7);
+  assert.equal(S.v, 8);
   const b = L.budgetStatus(S, "2026-11");
   const by = Object.fromEntries(b.rows.map(r => [r.cat, r]));
   assert.equal(by.Makan.spent, 550.5); assert.equal(by.Makan.level, "hampir"); assert.equal(by.Makan.left, 49.5);
@@ -468,4 +468,52 @@ test("bajet: belanja tunai + kad ikut kategori (tanpa kira huruf besar), bil kad
   assert.equal(r.budget.rows.length, 3);
   const xl = Object.fromEntries(L.excelSheets(S, "2026-11", new Date(2026, 10, 30)).map(x => [x.name, x.rows]));
   assert.deepEqual(xl.Bajet[1], ["Nov 2026", "Minyak", 300, 320, -20, 107, "Lebih bajet"]);
+});
+
+test("Pelan Tindakan: susun ikut PDF — ganti templat lama belum selesai, kekal matlamat sendiri", () => {
+  const S = L.normalize({ v: 7, settings: { targetPassive: 3000 }, asb: { have: 8500, s1: 15000, s1by: "2027-12" },
+    goals: [
+      { id: "o1", year: 2026, area: "Kerjaya", title: "Ambil kursus TTT (Train the Trainer)", done: false },
+      { id: "o2", year: 2026, area: "Kewangan", title: "Lengkapkan dana kecemasan 6 bulan", done: true },
+      { id: "u1", year: 2027, area: "Peribadi", title: "Umrah bersama keluarga", done: false }
+    ] });
+  assert.equal(S.v, 8); assert.equal(S.settings.targetSalary, 6000);
+  assert.equal(L.planApplied(S), false);
+  let n = 0;
+  const r = L.applyPlan(S, 0, () => "g" + (++n));
+  assert.deepEqual(r, { added: L.PLAN_TPL.length, removed: 1 });
+  assert.ok(!S.goals.some(g => g.id === "o1"));                 // templat lama belum selesai diganti
+  assert.ok(S.goals.some(g => g.id === "o2"));                  // yang sudah selesai dikekalkan
+  assert.ok(S.goals.some(g => g.id === "u1"));                  // matlamat sendiri dikekalkan
+  assert.equal(L.planApplied(S), true);
+  const tt = S.goals.find(g => g.tpl === "pt06");
+  assert.equal(tt.year, 2027); assert.equal(tt.when, "Q2–Q3"); assert.match(tt.title, /Train The Trainer/);
+  assert.equal(S.goals.filter(g => g.year === 2030 && g.metric).length, 4);
+  assert.equal(S.settings.targetPassive, 5000);
+  assert.equal(S.asb.s1by, "2028-11"); assert.equal(S.th.by, "2030-12"); assert.equal(S.gold.by, "2030-12");
+  assert.equal(S.asb.have, 8500);                               // baki tidak disentuh
+  assert.deepEqual(L.applyPlan(S, 0, () => "x"), { added: 0, removed: 0 });   // ulang: tiada pendua
+});
+
+test("Pelan Tindakan: metrik sasaran, simpanan bulanan & semakan Jun/Dis", () => {
+  const S = L.normalize({ incomes: [{ type: "aktif", amount: 4782 }, { type: "pasif", amount: 300 }],
+    asb: { have: 8500, s1: 15000 }, th: { have: 1000, target: 15000 }, gold: { have: 2, target: 30 },
+    deposits: [
+      { kind: "asb", dir: "in", date: "2026-12-05", amount: 400 }, { kind: "th", dir: "in", date: "2026-12-20", amount: 225 },
+      { kind: "th", dir: "out", date: "2026-12-21", amount: 25 }, { kind: "emas", dir: "in", date: "2026-12-10", grams: 0.65 },
+      { kind: "asb", dir: "in", date: "2026-11-30", amount: 999 } ] });
+  const M = L.planMetrics(S);
+  assert.deepEqual(M.gaji, { have: 4782, target: 6000 });
+  assert.deepEqual(M.pasif, { have: 300, target: 3000 });
+  assert.equal(M.simpanan.have, 8500 + 400 + 999 + 1000 + 225 - 25);
+  assert.equal(M.simpanan.target, 30000);
+  assert.deepEqual(L.monthlySaving(S, "2026-12"), { rm: 600, g: 0.65 });
+  // semakan
+  assert.deepEqual(L.nextReview(S, new Date(2026, 10, 12)), { ym: "2026-12", due: false });
+  assert.deepEqual(L.nextReview(S, new Date(2026, 11, 3)), { ym: "2026-12", due: true });
+  S.reviews.push({ id: "r", ym: "2026-12", notes: "ok" });
+  assert.deepEqual(L.nextReview(S, new Date(2026, 11, 20)), { ym: "2027-06", due: false });
+  assert.deepEqual(L.nextReview(S, new Date(2027, 2, 1)), { ym: "2027-06", due: false });
+  assert.deepEqual(L.nextReview(S, new Date(2027, 5, 1)), { ym: "2027-06", due: true });
+  assert.deepEqual(L.nextReview(S, new Date(2027, 7, 1)), { ym: "2027-12", due: false });
 });
