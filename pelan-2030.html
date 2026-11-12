@@ -114,8 +114,13 @@ svg.chart text{fill:var(--muted);font-size:11px;font-family:inherit}
 .toast{position:fixed;left:16px;right:16px;max-width:448px;margin:0 auto;bottom:calc(80px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);min-height:52px;display:flex;align-items:center;padding:0 16px;border-radius:12px;font-size:15px;font-weight:500;box-shadow:var(--shadow-raised);z-index:20}
 @media (prefers-reduced-motion:no-preference){.bar>i{transition:width .4s ease}}
 #printArea{display:none}
-.stat{min-width:0}
-.stat b{white-space:nowrap;font-size:clamp(1rem,4.4vw,1.35rem)!important;overflow:hidden;text-overflow:ellipsis}
+.stat{min-width:0;container-type:inline-size}
+.stat b{white-space:nowrap;font-size:clamp(.85rem,11.5cqw,1.4rem)!important;overflow:visible}
+.is-hid{display:none!important}
+.colhead{display:flex;align-items:center;gap:8px}
+.colhead > h2,.colhead > h3{margin:0;flex:1;min-width:0}
+.colbtn{flex:none;min-width:34px;min-height:30px;padding:2px 8px!important;font-size:15px;line-height:1;border-radius:999px}
+section.card.is-collapsed .colhead{margin-bottom:0}
 #fab{position:fixed;right:16px;bottom:calc(80px + env(safe-area-inset-bottom));height:60px;min-height:60px;padding:0 22px 0 18px;border-radius:999px;border:0;background:var(--primary);color:var(--on-primary);font-size:16px;font-weight:700;display:inline-flex;align-items:center;gap:8px;box-shadow:var(--shadow-raised);z-index:15}
 #fab b{font-size:26px;line-height:1;font-weight:500}
 #sheet{position:fixed;inset:0;z-index:30;background:var(--scrim);display:flex;align-items:flex-end;justify-content:center}
@@ -2215,6 +2220,9 @@ function vTetapan() {
     <div class="seg" data-noi18n><button type="button" data-act="lang" data-v="ms" aria-pressed="${LANG === "ms"}">Bahasa Malaysia</button><button type="button" data-act="lang" data-v="en" aria-pressed="${LANG === "en"}">English</button></div>
     <div class="small muted" style="margin:12px 0 6px">Tema</div>
     <div class="seg" style="grid-template-columns:1fr 1fr 1fr"><button type="button" data-act="theme" data-v="light" aria-pressed="${th === "light"}">☀️ Terang</button><button type="button" data-act="theme" data-v="dark" aria-pressed="${th === "dark"}">🌙 Gelap</button><button type="button" data-act="theme" data-v="auto" aria-pressed="${th === "auto"}">Ikut sistem</button></div>
+    <div class="small muted" style="margin:14px 0 6px">Bahagian disembunyikan: ${HIDDEN.size}</div>
+    <div class="row"><button type="button" class="sm" data-act="showall" ${HIDDEN.size ? "" : "disabled"}>Tunjuk semua bahagian</button></div>
+    <p class="small muted" style="margin:6px 0 0">Tekan ▾ di sebelah tajuk mana-mana bahagian untuk menyembunyikannya.</p>
   </section>
   ${vCloud()}
   ${vEmailAuto()}
@@ -2338,9 +2346,61 @@ document.addEventListener("submit", e => {
 }, true);
 document.addEventListener("keydown", e => { if (e.key === "Escape" && Q) closeQuick(); });
 
+/* ---------- sembunyi / tunjuk bahagian (ikut peranti) ---------- */
+let HIDDEN = new Set((() => { try { return JSON.parse(localStorage.getItem("pelan2030:hidden") || "[]"); } catch { return []; } })());
+const saveHidden = () => { try { localStorage.setItem("pelan2030:hidden", JSON.stringify([...HIDDEN])); } catch {} };
+// Kunci stabil: tab + tajuk tanpa nombor & nama bulan (cth. "Ringkasan 2026" = "Ringkasan 2027").
+const colKey = (t) => tab + "|" + t.replace(/\b(Jan|Feb|Mac|Mar|Apr|Mei|May|Jun|Jul|Ogo|Aug|Sep|Okt|Oct|Nov|Dis|Dec)\b/g, "").replace(/[\d.,–()%·]+/g, "").replace(/\s+/g, " ").trim();
+function colBtn(key, kind) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "ghost sm colbtn"; b.dataset.act = "collapse"; b.dataset.key = key; b.dataset.kind = kind;
+  return b;
+}
+function applyCollapse(sec) {
+  const secHidden = HIDDEN.has(sec.dataset.colkey);
+  let grp = false;
+  for (const k of sec.children) {
+    if (k.dataset.colhead === "sec") continue;
+    if (k.dataset.colhead === "sub") { grp = HIDDEN.has(k.dataset.colkey); k.classList.toggle("is-hid", secHidden); continue; }
+    k.classList.toggle("is-hid", secHidden || grp);
+  }
+  sec.classList.toggle("is-collapsed", secHidden);
+  sec.querySelectorAll(".colbtn").forEach(b => {
+    const h = HIDDEN.has(b.dataset.key);
+    b.textContent = h ? "▸" : "▾";
+    b.setAttribute("aria-expanded", String(!h));
+    b.setAttribute("aria-label", trS(h ? "Tunjuk bahagian" : "Sembunyi bahagian"));
+    b.title = b.getAttribute("aria-label");
+  });
+}
+function enhanceCollapsibles() {
+  document.querySelectorAll("#app section.card").forEach(sec => {
+    if (sec.classList.contains("hero")) return;
+    const h2 = sec.querySelector("h2");
+    if (h2) {
+      let head = h2; while (head.parentElement && head.parentElement !== sec) head = head.parentElement;
+      if (head.parentElement === sec) {
+        if (head === h2) { const w = document.createElement("div"); w.className = "colhead"; sec.insertBefore(w, h2); w.appendChild(h2); head = w; }
+        else head.classList.add("colhead");
+        head.dataset.colhead = "sec";
+        sec.dataset.colkey = colKey(h2.textContent);
+        head.appendChild(colBtn(sec.dataset.colkey, "sec"));
+      }
+    }
+    for (const h3 of [...sec.children].filter(c => c.tagName === "H3")) {
+      const w = document.createElement("div"); w.className = "colhead"; w.style.marginTop = h3.style.marginTop || "14px"; h3.style.marginTop = "0";
+      sec.insertBefore(w, h3); w.appendChild(h3);
+      w.dataset.colhead = "sub"; w.dataset.colkey = colKey("§" + h3.textContent);
+      w.appendChild(colBtn(w.dataset.colkey, "sub"));
+    }
+    if (sec.dataset.colkey || sec.querySelector('[data-colhead="sub"]')) applyCollapse(sec);
+  });
+}
+
 function render() {
   if (!VIEWS[tab]) tab = "ringkasan";
   document.getElementById("app").innerHTML = VIEWS[tab]();
+  enhanceCollapsibles();
   document.getElementById("nav").innerHTML = TABS.map(([k, l]) => `<button data-tab="${k}" ${k === tab || (k === "lagi" && UNDER_LAGI.includes(tab)) ? 'aria-current="page"' : ""}><i>${icon(k)}</i><span>${l}</span></button>`).join("");
 }
 
@@ -2489,6 +2549,8 @@ document.addEventListener("click", e => {
       break;
     }
     case "pdf": exportPDF(); break;
+    case "collapse": { const k = b.dataset.key; HIDDEN.has(k) ? HIDDEN.delete(k) : HIDDEN.add(k); saveHidden(); applyCollapse(b.closest("section.card")); break; }
+    case "showall": HIDDEN.clear(); saveHidden(); render(); toast("Semua bahagian dipaparkan semula"); break;
     case "auditpick": document.getElementById("auditFile").click(); break;
     case "auditcancel": AUD = null; render(); break;
     case "auditgo": {

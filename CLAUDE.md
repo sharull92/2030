@@ -92,6 +92,10 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - JANGAN commit fail audit / data kewangan pengguna — repo awam. Ujian guna data rekaan sahaja.
 - Audit Jan–Okt 2026 pengguna: ±2,400 transaksi ≈ 350 KB; `plan_history` dihadkan 100 salinan.
 
+## Sembunyi / tunjuk bahagian
+- `enhanceCollapsibles()` dipanggil dalam `render()` (sebelum terjemahan): setiap `section.card` (kecuali `.hero`) dengan `h2` dapat butang ▾/▸ (`.colbtn`, data-act `collapse`) dalam `.colhead`; setiap `h3` anak langsung kad menjadi sub-bahagian (menyembunyikan adik-beradik hingga sub-tajuk seterusnya). Kunci `colKey()` = tab + tajuk tanpa nombor/bulan (stabil antara tahun/bulan). Disimpan ikut peranti `localStorage["pelan2030:hidden"]`; Tetapan → Paparan → "Tunjuk semua bahagian".
+- Nilai `.stat b` guna container query (`11.5cqw`) supaya nombor panjang mengecil, bukan terpotong.
+
 ## Format nombor
 - Wang: `RM()` sentiasa 2 tempat perpuluhan (RM 4,782.00), dibundar ke sen. Semua input wang `step="0.01" inputmode="decimal"`.
 - Emas: `fmtG()` hingga 3 tempat perpuluhan (1.025 g); input gram `step="0.001"`.
