@@ -3,6 +3,18 @@
 // Nama kategori, nama kad & nota pengguna sengaja TIDAK diterjemah.
 window.I18N_EN = {
 exact: {
+"Import audit (Excel)": "Import audit (Excel)",
+"Masukkan transaksi daripada fail audit Excel anda (helaian": "Add transactions from your Excel audit file (sheet",
+"). Data hanya masuk ke app & akaun awan anda.": "). Data only goes into the app & your cloud account.",
+"Pilih fail Excel": "Choose Excel file",
+"Import transaksi sebelum tarikh": "Import transactions before date",
+"Termasuk baris \"Dikira = Tidak\" (pindahan akaun sendiri, pra-kebenaran)": "Include \"Counted = No\" rows (own-account transfers, pre-authorisations)",
+"Ikut bulan": "By month",
+"Import {n} transaksi": "Import {n} transactions",
+"{n} baris · {n} {m} {n} – {n} {m} {n}": "{n} rows · {n} {m} {n} – {n} {m} {n}",
+"Rekod manual anda bermula {n} {m} {n} — audit dari tarikh itu dilangkau supaya tidak berganda.": "Your manual records start on {n} {m} {n} — audit rows from that date are skipped to avoid duplicates.",
+"Dilangkau: {n} \"Dikira = Tidak\" · {n} selepas tarikh potong · {n} sudah diimport. Hibah bank digabung sebulan bagi setiap akaun.": "Skipped: {n} \"Counted = No\" · {n} after the cut-off date · {n} already imported. Bank hibah is combined per month per account.",
+"· {n} transaksi": "· {n} transactions",
 "Rekod transaksi": "Record transaction",
 "Tutup": "Close",
 "Disegerak {n}:{n} PG": "Synced {n}:{n} am",
@@ -540,6 +552,10 @@ exact: {
 "Tambah pendapatan": "Add income"
 },
 phrases: [
+["transaksi audit diimport", "audit transactions imported"],
+["Import dibatalkan", "Import undone"],
+["Format tidak dikenali — perlu helaian Transaksi dengan lajur Tarikh, Amaun & Kategori", "Unrecognised format — needs a Transaksi sheet with Tarikh, Amaun & Kategori columns"],
+["Gagal baca fail — semak internet & format .xlsx", "Couldn't read the file — check internet & .xlsx format"],
 ["Disegerak ", "Synced "],
 [" PTG", " pm"],
 [" PG", " am"],

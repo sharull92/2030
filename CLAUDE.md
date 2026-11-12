@@ -87,6 +87,11 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - **Bila menambah teks UI baru:** tambah terjemahan dalam `i18n/en.js` (kunci = teks BM dengan nombor → `{n}`, bulan → `{m}`).
 - Tema: `document.documentElement.dataset.theme` = light/dark (tiada = ikut sistem), disimpan `localStorage["pelan2030:theme"]`; bahasa `localStorage["pelan2030:lang"]` — kedua-dua ikut peranti, dipasang awal dalam `<head>` (tiada kelipan). Butang BM/EN & ☀️/🌙 di hero Ringkasan (`prefButtons`) + kad "Paparan" di Tetapan. Tukar ke BM = muat semula halaman.
 
+## Import audit Excel (Tetapan → "Import audit (Excel)")
+- Format pengguna: helaian "Transaksi" (Tarikh, Bulan Penyata, Akaun, Penerangan, Butiran, Debit, Kredit, Amaun (+/−), Jenis, Kategori, Kumpulan, Dikira Dalam Audit). `parseAudit()` (nombor siri Excel → tarikh, lajur dicari ikut nama) → `planAuditImport()` (langkau "Dikira = Tidak" kecuali dipilih, potong sebelum tarikh rekod manual pertama `manualStart()`, hibah digabung sebulan/akaun, id tetap `aud-<fnv>` dengan indeks pendua sah, kategori audit dikekalkan, nota = butiran pendek · akaun). Pratonton ikut bulan; Undo selepas import. SheetJS dimuat dari jsDelivr.
+- JANGAN commit fail audit / data kewangan pengguna — repo awam. Ujian guna data rekaan sahaja.
+- Audit Jan–Okt 2026 pengguna: ±2,400 transaksi ≈ 350 KB; `plan_history` dihadkan 100 salinan.
+
 ## Format nombor
 - Wang: `RM()` sentiasa 2 tempat perpuluhan (RM 4,782.00), dibundar ke sen. Semua input wang `step="0.01" inputmode="decimal"`.
 - Emas: `fmtG()` hingga 3 tempat perpuluhan (1.025 g); input gram `step="0.001"`.

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets, budgetStatus, catKey, applyPlan, planApplied, planMetrics, monthlySaving, nextReview, PLAN_TPL, planMinimum };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets, budgetStatus, catKey, applyPlan, planApplied, planMetrics, monthlySaving, nextReview, PLAN_TPL, planMinimum, parseAudit, planAuditImport, manualStart };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -535,4 +535,39 @@ test("planMinimum: minimum sebulan hingga Dis 2030 (data pengguna 12 Nov 2026)",
   S.deposits.push({ kind: "asb", dir: "in", date: "2026-11-05", amount: 200 }, { kind: "emas", dir: "in", date: "2026-11-06", grams: 0.1 });
   const m2 = L.planMinimum(S, new Date(2026, 10, 12));
   assert.equal(m2.simpanan, 360); assert.equal(m2.emas, 0.314);
+});
+
+test("import audit Excel: baca, langkau Dikira=Tidak, gabung hibah, potong ikut rekod manual, tiada pendua", () => {
+  const rows = [
+    ["Tarikh", "Bulan Penyata", "Akaun", "Penerangan", "Butiran", "Debit (RM)", "Kredit (RM)", "Amaun (RM)", "Jenis", "Kategori", "Kumpulan", "Dikira Dalam Audit"],
+    [46031, "2026-01", "Bank A", "SALARY", "SYARIKAT ABC | GAJI JAN", null, 4000, 4000, "Masuk", "Gaji", "Pendapatan teras", "Ya"],
+    [46032, "2026-01", "Bank A", "QR", "KEDAI MAKAN | REF1", 12.5, null, -12.5, "Keluar", "Makan & minum", "Belanja harian", "Ya"],
+    [46032, "2026-01", "Bank A", "QR", "KEDAI MAKAN | REF1", 12.5, null, -12.5, "Keluar", "Makan & minum", "Belanja harian", "Ya"],
+    [46033, "2026-01", "Bank A", "TRF", "AKAUN SENDIRI", 500, null, -500, "Keluar", "Pindahan antara akaun sendiri", "Pindahan", "Tidak"],
+    [46034, "2026-01", "Bank B", "HIBAH", "HIBAH", null, 0.01, 0.01, "Masuk", "Hibah / keuntungan bank", "Pendapatan teras", "Ya"],
+    [46040, "2026-01", "Bank B", "HIBAH", "HIBAH", null, 0.02, 0.02, "Masuk", "Hibah / keuntungan bank", "Pendapatan teras", "Ya"],
+    [46041, "2026-01", "Bank B", "HIBAH", "HIBAH", null, null, null, "Masuk", "Hibah / keuntungan bank", "Pendapatan teras", "Ya"],
+    [46070, "2026-03", "Bank A", "QR", "PETRONAS | X", 50, null, -50, "Keluar", "Petrol", "Belanja harian", "Ya"]
+  ];
+  const items = L.parseAudit(rows);
+  assert.equal(items.length, 7);                                        // baris amaun kosong dilangkau
+  assert.equal(items[0].date, "2026-01-09");                            // nombor siri Excel 46031 → 9 Jan 2026
+  assert.equal(L.parseAudit([["Nama", "Umur"], ["x", 1]]), null);        // bukan format audit
+  const S = L.normalize({});
+  const P = L.planAuditImport(S, items, {});
+  assert.equal(P.skipped.notCounted, 1);
+  assert.equal(P.tx.length, 5);                                         // gaji + 2 makan (pendua sah) + 1 hibah gabung + petrol
+  const hib = P.tx.find(t => /Hibah/.test(t.note));
+  assert.equal(hib.amount, 0.03); assert.equal(hib.note, "Hibah 2 transaksi · Bank B");
+  assert.equal(P.tx.filter(t => t.cat === "Makan & minum").length, 2);  // dua belian sama hari dikekalkan
+  assert.equal(new Set(P.tx.map(t => t.id)).size, 5);
+  assert.equal(P.tx.find(t => t.cat === "Gaji").note, "SYARIKAT ABC · Bank A");
+  assert.deepEqual(P.months["2026-01"], { in: 4000.03, out: 25, n: 4 });
+  S.tx.push(...P.tx);
+  assert.equal(L.planAuditImport(S, items, {}).tx.length, 0);            // import semula
+  const S2 = L.normalize({ tx: [{ id: "m", date: "2026-02-10", type: "out", cat: "X", amount: 1 }] });
+  const cut = L.manualStart(S2, "2026-01-01");
+  assert.equal(cut, "2026-02-10");                                     // petrol 17 Feb dilangkau
+  assert.equal(L.planAuditImport(S2, items, { cutoff: cut }).skipped.after, 1);
+  assert.equal(L.planAuditImport(S2, items, { includeExcluded: true }).tx.length, 6);
 });

@@ -110,7 +110,7 @@ end $$;
 -- SEJARAH PELAN: salinan lama disimpan secara automatik supaya data yang
 -- terpadam boleh dicari semula (Tetapan → Item terpadam → Cari item terpadam).
 -- Salinan diambil jika ada item dipadam, atau jika salinan terakhir > 5 minit.
--- 300 salinan terbaru bagi setiap pelan disimpan.
+-- 100 salinan terbaru bagi setiap pelan disimpan.
 -- =====================================================================
 create table if not exists public.plan_history (
   id       bigserial primary key,
@@ -138,7 +138,7 @@ begin
     delete from public.plan_history h
      where h.plan_id = old.id
        and h.id < (select min(x.id) from (select id from public.plan_history
-                                           where plan_id = old.id order by id desc limit 300) x);
+                                           where plan_id = old.id order by id desc limit 100) x);
   end if;
   return new;
 end $$;

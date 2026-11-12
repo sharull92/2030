@@ -732,6 +732,69 @@ function isDupAuto(S, type, amount, date, myPrefix) {
     && t.type === type && t.date === date && Math.abs((Number(t.amount) || 0) - amount) < 0.005);
 }
 
+// ---------- import audit kewangan (Excel) ----------
+// Format: helaian "Transaksi" dengan lajur Tarikh, Bulan Penyata, Akaun, Penerangan, Butiran, Debit, Kredit,
+// Amaun (RM) (+ masuk / − keluar), Jenis, Kategori, Kumpulan, Dikira Dalam Audit (Ya/Tidak).
+function auditDate(v) {
+  if (typeof v === "number" && isFinite(v)) { const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v * 86400000)); return d.toISOString().slice(0, 10); }
+  if (v instanceof Date && !isNaN(v)) return ymd(v);
+  const s = String(v || "").trim(), m = s.match(/^(\d{4})-(\d{2})-(\d{2})/) || s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return null;
+  return m[1].length === 4 ? `${m[1]}-${m[2]}-${m[3]}` : `${m[3]}-${String(m[2]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
+}
+function parseAudit(rows) {
+  const head = (rows[0] || []).map(h => String(h || "").trim().toLowerCase());
+  const col = (...names) => head.findIndex(h => names.some(n => h.startsWith(n)));
+  const C = { date: col("tarikh"), acc: col("akaun"), desc: col("penerangan"), det: col("butiran"), amt: col("amaun"), type: col("jenis"),
+    cat: col("kategori"), grp: col("kumpulan"), cnt: col("dikira") };
+  if (C.date < 0 || C.amt < 0 || C.cat < 0) return null;
+  const out = [];
+  for (const r of rows.slice(1)) {
+    if (!r || r[C.date] == null || r[C.amt] == null || r[C.amt] === "") continue;
+    const date = auditDate(r[C.date]), amt = Number(r[C.amt]);
+    if (!date || !isFinite(amt) || amt === 0) continue;
+    const jenis = C.type >= 0 ? String(r[C.type] || "") : "";
+    out.push({ date, type: /masuk/i.test(jenis) ? "in" : /keluar/i.test(jenis) ? "out" : amt > 0 ? "in" : "out", amount: Math.round(Math.abs(amt) * 100) / 100,
+      cat: String(r[C.cat] || "Lain-lain").trim(), grp: C.grp >= 0 ? String(r[C.grp] || "").trim() : "",
+      acc: C.acc >= 0 ? String(r[C.acc] || "").trim() : "", det: String((C.det >= 0 ? r[C.det] : "") || (C.desc >= 0 ? r[C.desc] : "") || "").trim(),
+      counted: C.cnt < 0 || !/^tidak/i.test(String(r[C.cnt] || "")) });
+  }
+  return out;
+}
+function fnv(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36); }
+const auditNote = (det, acc) => { const d = String(det).split("|")[0].replace(/\s+/g, " ").trim().slice(0, 48); return (d ? d + " · " : "") + acc; };
+// Rancang transaksi untuk diimport: dikira sahaja (pilihan: semua), sebelum `cutoff`, hibah digabung sebulan/akaun,
+// id tetap "aud-…" supaya import semula tidak menggandakan.
+function planAuditImport(S, items, opt = {}) {
+  const cutoff = opt.cutoff || "9999-12-31", have = new Set([...S.tx.map(t => t.id), ...Object.keys(S.trash)]);
+  const seen = {}, out = [], hib = {};
+  let skipped = { notCounted: 0, after: 0, dup: 0 };
+  for (const it of items) {
+    if (!it.counted && !opt.includeExcluded) { skipped.notCounted++; continue; }
+    if (it.date >= cutoff) { skipped.after++; continue; }
+    if (/hibah|keuntungan bank/i.test(it.cat)) { const k = it.date.slice(0, 7) + "|" + it.acc + "|" + it.type; (hib[k] = hib[k] || []).push(it); continue; }
+    const base = [it.date, it.acc, it.type, it.amount.toFixed(2), it.det].join("|");
+    seen[base] = (seen[base] || 0) + 1;
+    out.push({ id: "aud-" + fnv(base + "#" + seen[base]), date: it.date, type: it.type, cat: it.cat, amount: it.amount, note: auditNote(it.det, it.acc) });
+  }
+  for (const [k, arr] of Object.entries(hib)) {
+    const [m, acc, type] = k.split("|"), sumv = Math.round(arr.reduce((a, x) => a + x.amount, 0) * 100) / 100;
+    if (sumv <= 0) continue;
+    out.push({ id: "aud-" + fnv("hibah|" + k), date: arr.map(x => x.date).sort().pop(), type, cat: arr[0].cat, amount: sumv, note: `Hibah ${arr.length} transaksi · ${acc}` });
+  }
+  const fresh = out.filter(t => { if (have.has(t.id)) { skipped.dup++; return false; } return true; }).sort((a, b) => a.date.localeCompare(b.date));
+  const months = {};
+  for (const t of fresh) { const m = t.date.slice(0, 7); months[m] = months[m] || { in: 0, out: 0, n: 0 }; months[m][t.type] += t.amount; months[m].n++; }
+  for (const m of Object.values(months)) { m.in = Math.round(m.in * 100) / 100; m.out = Math.round(m.out * 100) / 100; }
+  return { tx: fresh, months, skipped };
+}
+// Tarikh rekod manual pertama (bukan import/auto) selepas tarikh mula audit → potong audit sebelum tarikh ini.
+function manualStart(S, from) {
+  const d = S.tx.filter(t => !/^(aud|inc|ntf)-/.test(String(t.id)) && t.date >= from).map(t => t.date).sort()[0];
+  const c = S.cardTx.filter(t => t.type === "belanja" && t.date >= from).map(t => t.date).sort()[0];
+  return [d, c].filter(Boolean).sort()[0] || null;
+}
+
 // ---------- tong sampah & pulih ----------
 const LISTS = ["incomes", "commitments", "debts", "tx", "goals", "ventures", "cards", "cardTx", "deposits", "budgets", "reviews"];
 const LIST_LABEL = { incomes: "Pendapatan", commitments: "Komitmen", debts: "Hutang", tx: "Transaksi", goals: "Matlamat", ventures: "Projek niaga", cards: "Kad kredit", cardTx: "Rekod kad", deposits: "Rekod simpanan", budgets: "Bajet", reviews: "Semakan", steps: "Langkah projek" };
@@ -2107,6 +2170,39 @@ function vTrash() {
   </section>`;
 }
 
+let AUD = null; // { name, items, cutoff, includeExcluded }
+async function readAuditFile(file) {
+  try {
+    if (!window.XLSX) { toast("Menyediakan Excel…"); await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"); }
+    const wb = window.XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const name = wb.SheetNames.find(n => /^transaksi$/i.test(n.trim())) || wb.SheetNames[0];
+    const items = parseAudit(window.XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true }));
+    if (!items || !items.length) return toast("Format tidak dikenali — perlu helaian Transaksi dengan lajur Tarikh, Amaun & Kategori");
+    const first = items.map(i => i.date).sort()[0], last = items.map(i => i.date).sort().pop();
+    const ms = manualStart(S, first);
+    const next = d => { const x = new Date(d + "T00:00:00"); x.setDate(x.getDate() + 1); return ymd(x); };
+    AUD = { name: file.name, items, first, last, manual: ms, cutoff: ms && ms <= last ? ms : next(last), includeExcluded: false };
+    render(); setTimeout(() => { const el = document.getElementById("importAudit"); if (el) el.scrollIntoView({ block: "start" }); }, 50);
+  } catch (e) { toast("Gagal baca fail — semak internet & format .xlsx"); }
+}
+function vImport() {
+  let body = `<p class="small muted">Masukkan transaksi daripada fail audit Excel anda (helaian <b>Transaksi</b>). Data hanya masuk ke app & akaun awan anda.</p>
+    <button class="primary" data-act="auditpick">Pilih fail Excel</button>`;
+  if (AUD) {
+    const P = planAuditImport(S, AUD.items, AUD);
+    const tin = sum(Object.values(P.months), m => m.in), tout = sum(Object.values(P.months), m => m.out);
+    body = `<p class="small"><b>${esc(AUD.name)}</b> · ${AUD.items.length} baris · ${fmtD(AUD.first)} – ${fmtD(AUD.last)}</p>
+    <label>Import transaksi sebelum tarikh<input type="date" data-act="auditcut" value="${AUD.cutoff}"></label>
+    ${AUD.manual && AUD.manual <= AUD.last ? `<p class="small muted" style="margin:.3rem 0">Rekod manual anda bermula ${fmtD(AUD.manual)} — audit dari tarikh itu dilangkau supaya tidak berganda.</p>` : ""}
+    <label style="display:flex;gap:8px;align-items:center;margin-top:8px;color:var(--ink)"><input type="checkbox" data-act="auditexcl" ${AUD.includeExcluded ? "checked" : ""} style="width:20px">Termasuk baris "Dikira = Tidak" (pindahan akaun sendiri, pra-kebenaran)</label>
+    <div class="grid3" style="margin-top:10px">${stat("Transaksi", P.tx.length)}${stat("Masuk", RM(tin), "pos")}${stat("Keluar", RM(tout), "neg")}</div>
+    <details style="margin-top:8px"><summary>Ikut bulan</summary><ul class="list">${Object.entries(P.months).map(([m, v]) => `<li style="padding:6px 0"><div class="grow">${fmtYM(m)} <span class="small muted">· ${v.n} transaksi</span></div><span class="small num"><span class="pos">+${RM(v.in)}</span> · <span class="neg">−${RM(v.out)}</span></span></li>`).join("")}</ul></details>
+    <p class="small muted">Dilangkau: ${P.skipped.notCounted} "Dikira = Tidak" · ${P.skipped.after} selepas tarikh potong · ${P.skipped.dup} sudah diimport. Hibah bank digabung sebulan bagi setiap akaun.</p>
+    <div class="row"><button class="primary" data-act="auditgo" ${P.tx.length ? "" : "disabled"}>Import ${P.tx.length} transaksi</button><button class="ghost sm" data-act="auditcancel">Batal</button></div>`;
+  }
+  return `<section class="card" id="importAudit"><h2>Import audit (Excel)</h2>${body}<input type="file" id="auditFile" accept=".xlsx,.xls" hidden></section>`;
+}
+
 function vTetapan() {
   const th = document.documentElement.dataset.theme || "auto";
   return `
@@ -2130,6 +2226,7 @@ function vTetapan() {
   </section>
   ${vNotify()}
   ${vInstall()}
+  ${vImport()}
   ${vTrash()}
   <section class="card">
     <h2>Sandaran</h2>
@@ -2389,6 +2486,14 @@ document.addEventListener("click", e => {
       break;
     }
     case "pdf": exportPDF(); break;
+    case "auditpick": document.getElementById("auditFile").click(); break;
+    case "auditcancel": AUD = null; render(); break;
+    case "auditgo": {
+      const P = planAuditImport(S, AUD.items, AUD), ids = new Set(P.tx.map(t => t.id));
+      S.tx.push(...P.tx); AUD = null; commit();
+      toastUndo(`${P.tx.length} transaksi audit diimport`, () => { S.tx = S.tx.filter(t => !ids.has(t.id)); commit(); toast("Import dibatalkan"); });
+      break;
+    }
     case "lang": setLang(b.dataset.v || (LANG === "en" ? "ms" : "en")); break;
     case "theme": setTheme(b.dataset.v || (curTheme() === "dark" ? "light" : "dark")); break;
     case "emailtok": makeEmailToken(); break;
@@ -2430,6 +2535,7 @@ document.addEventListener("click", e => {
 
 document.addEventListener("change", e => {
   const el = e.target;
+  if (el.id === "auditFile" && el.files[0]) { readAuditFile(el.files[0]); el.value = ""; return; }
   if (el.id === "restoreFile" && el.files[0]) {
     el.files[0].text().then(txt => {
       const d = JSON.parse(txt);
@@ -2441,6 +2547,8 @@ document.addEventListener("change", e => {
   const act = el.dataset.act; if (!act) return;
   if (act === "txmonth") { txMonth = el.value; render(); }
   if (act === "reportmonth" && el.value) { reportMonth = el.value; }
+  if (act === "auditcut" && el.value && AUD) { AUD.cutoff = el.value; render(); }
+  if (act === "auditexcl" && AUD) { AUD.includeExcluded = el.checked; render(); }
   if (act === "budgetmonth" && el.value) { budgetMonth = el.value; render(); }
   if (act === "budgetamt") { const x = S.budgets.find(y => y.id === el.dataset.id); if (x && num(el.value) >= 0) { x.amount = num(el.value); commit(); } }
   if (act === "sumyear") { sumYear = num(el.value); render(); }
