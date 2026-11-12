@@ -3,6 +3,16 @@
 // Nama kategori, nama kad & nota pengguna sengaja TIDAK diterjemah.
 window.I18N_EN = {
 exact: {
+    "Belanja kad kredit tanpa bajet:": "Credit card spending without a budget:",
+    "Belanja tunai tanpa bajet:": "Cash spending without a budget:",
+    "Kad RM {n} · jumlah RM {n} / RM {n} · —": "Card RM {n} · total RM {n} / RM {n} · —",
+    "Tunai RM {n} · jumlah RM {n} / RM {n} · —": "Cash RM {n} · total RM {n} / RM {n} · —",
+    "Kad RM {n} · jumlah RM {n} / RM {n} · {n}%": "Card RM {n} · total RM {n} / RM {n} · {n}%",
+    "Tunai RM {n} · jumlah RM {n} / RM {n} · {n}%": "Cash RM {n} · total RM {n} / RM {n} · {n}%",
+    "Belanja kad kredit RM {n} · jumlah RM {n} / bajet RM {n}": "Credit card spending RM {n} · total RM {n} / budget RM {n}",
+    "Belanja tunai RM {n} · jumlah RM {n} / bajet RM {n}": "Cash spending RM {n} · total RM {n} / budget RM {n}",
+    "Bar menunjukkan belanja kad kredit sahaja; baki bajet tetap dikira daripada semua belanja.": "Bars show credit card spending only; the budget balance still counts all spending.",
+    "Bar menunjukkan belanja tunai sahaja; baki bajet tetap dikira daripada semua belanja.": "Bars show cash spending only; the budget balance still counts all spending.",
     "{m} {n} keluar tunai RM {n}": "{m} {n} cash out RM {n}",
     "{m} {n} belanja kad RM {n}": "{m} {n} card spending RM {n}",
     "{m} {n} bayaran kad RM {n}": "{m} {n} card payments RM {n}",
@@ -667,6 +677,8 @@ phrases: [
 ["Teruskan bina pendapatan pasif hingga capai sasaran.", "Keep building passive income until you reach the target."],
 ["Matlamat ", "Goal "],
 ["Semua kategori dalam bajet 👍", "All categories within budget 👍"],
+["Belanja tunai tanpa bajet:", "Cash spending without budget:"],
+["Belanja kad kredit tanpa bajet:", "Credit card spending without budget:"],
 ["Belanja tanpa bajet:", "Spending without budget:"],
 ["Tambah bajet", "Add budget"],
 ["Sasaran 2030", "2030 targets"],

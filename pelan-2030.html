@@ -622,15 +622,16 @@ const fmtYMx = k => { const B = ["Jan","Feb","Mac","Apr","Mei","Jun","Jul","Ogo"
 // Bajet: kategori dipadankan tanpa kira huruf besar/kecil & ruang. Belanja = definisi sama dengan ringkasan
 // (tx Keluar kecuali "Kad kredit" + belanja kad).
 const catKey = c => String(c || "Lain-lain").trim().replace(/\s+/g, " ").toLowerCase();
-function spendByCat(S, m) {
+// mode: "" = semua, "tunai" = tx Keluar bukan belian kad, "kad" = belanja kad (cardTx + tx isCardTx).
+function spendByCat(S, m, mode) {
   const out = {};
   const add = (cat, amt) => { const k = catKey(cat); if (!out[k]) out[k] = { label: String(cat || "Lain-lain").trim() || "Lain-lain", amount: 0 }; out[k].amount += Number(amt) || 0; };
-  for (const t of S.tx) if (t.type === "out" && t.cat !== "Kad kredit" && pk(S, t.date) === m) add(t.cat, t.amount);
-  for (const t of S.cardTx) if (t.type === "belanja" && pk(S, t.date) === m) add(t.cat, t.amount);
+  for (const t of S.tx) if (t.type === "out" && t.cat !== "Kad kredit" && pk(S, t.date) === m && (!mode || (mode === "kad") === isCardTx(t))) add(t.cat, t.amount);
+  if (mode !== "tunai") for (const t of S.cardTx) if (t.type === "belanja" && pk(S, t.date) === m) add(t.cat, t.amount);
   return out;
 }
-function budgetStatus(S, m) {
-  const sp = spendByCat(S, m);
+function budgetStatus(S, m, mode) {
+  const sp = spendByCat(S, m, mode);
   const rows = S.budgets.map(b => {
     const amount = Number(b.amount) || 0, spent = Math.round(((sp[catKey(b.cat)] || {}).amount || 0) * 100) / 100;
     const pct = amount > 0 ? spent / amount * 100 : spent > 0 ? Infinity : 0;
@@ -1085,7 +1086,7 @@ const today = () => new Date();
 
 let S = load();
 let tab = (() => { try { return localStorage.getItem(KEY + ":tab") || "ringkasan"; } catch { return "ringkasan"; } })();
-let txMonth = pkNow(S, today()), txPay = "";
+let txMonth = pkNow(S, today()), txPay = "", budgetPay = "";
 let trendSel = "6", trendPay = "";
 let sumYear = new Date().getFullYear(), sumMonth = "", sumPay = "";
 
@@ -1769,23 +1770,26 @@ function budgetBar(r) {
   return `<div class="bar ${cls}" role="progressbar" aria-valuenow="${Math.round(Math.min(r.pct, 999))}" aria-valuemin="0" aria-valuemax="100"><i style="width:${Math.min(100, r.pct)}%;background:${col}"></i></div>`;
 }
 function vBudget() {
-  const b = budgetStatus(S, budgetMonth);
+  const b = budgetStatus(S, budgetMonth), P = budgetPay, bm = P ? budgetStatus(S, budgetMonth, P) : b;
+  const pL = P === "kad" ? "kad kredit" : "tunai", mOf = id => (bm.rows.find(x => x.id === id) || { spent: 0 }).spent;
   const cats = [...new Set([...BUDGET_CATS, ...S.tx.filter(t => t.type === "out" && t.cat !== "Kad kredit").map(t => t.cat), ...S.cardTx.filter(t => t.type === "belanja").map(t => t.cat)].filter(Boolean).map(c => String(c).trim()))];
   const pillB = r => r.level === "lebih" ? `<span class="pill bad">Lebih ${RM(-r.left)}</span>` : r.level === "hampir" ? `<span class="pill warn">Baki ${RM(r.left)}</span>` : `<span class="pill ok">Baki ${RM(r.left)}</span>`;
   return `<section class="card" id="bajet">
     <div class="row between"><h2>Bajet bulanan</h2>${monthSelect("budgetmonth", budgetMonth, [...S.tx, ...S.cardTx].map(t => t.date)).replace(/<option value="" (selected)?>Semua bulan<\/option>/, "")}</div>
-    ${S.budgets.length ? `<div class="row between small" style="margin-top:4px"><span>Belanja ${RM(b.spent)} / bajet ${RM(b.budget)}</span><span>${b.pct.toFixed(0)}%</span></div>
-    ${budgetBar({ pct: b.pct, level: b.pct > 100 ? "lebih" : b.pct >= 80 ? "hampir" : "ok" })}
+    <div class="seg" style="grid-template-columns:1fr 1fr 1fr;margin:6px 0 8px">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) => `<button type="button" data-act="budgetpay" data-v="${k}" aria-pressed="${P === k}" style="padding:4px 2px;white-space:nowrap">${l}</button>`).join("")}</div>
+    ${P && S.budgets.length ? `<p class="small muted" style="margin:0 0 4px">Bar menunjukkan belanja ${pL} sahaja; baki bajet tetap dikira daripada semua belanja.</p>` : ""}
+    ${S.budgets.length ? `<div class="row between small" style="margin-top:4px"><span>${P ? `Belanja ${pL} ${RM(bm.spent)} · jumlah ${RM(b.spent)}` : `Belanja ${RM(b.spent)}`} / bajet ${RM(b.budget)}</span><span>${(P ? bm.pct : b.pct).toFixed(0)}%</span></div>
+    ${budgetBar({ pct: P ? bm.pct : b.pct, level: b.pct > 100 ? "lebih" : b.pct >= 80 ? "hampir" : "ok" })}
     <ul class="list" style="margin-top:8px">${b.rows.map(r => `<li style="display:block">
         <div style="display:flex;gap:8px;align-items:center">
           <div class="grow" style="flex:1;min-width:0;font-weight:600">${escW(r.cat)}</div>
           <input type="number" inputmode="decimal" step="0.01" min="0" value="${r.amount}" data-act="budgetamt" data-id="${r.id}" aria-label="Bajet ${esc(r.cat)}" style="width:112px;flex:none;padding-left:10px;padding-right:8px">
           ${del("budgets", r.id)}
         </div>
-        <div class="row between small" style="margin:6px 0 6px;gap:6px"><span class="muted">${RM(r.spent)} / ${RM(r.amount)} · ${isFinite(r.pct) ? r.pct.toFixed(0) + "%" : "—"}</span>${pillB(r)}</div>
-        ${budgetBar(r)}
+        <div class="row between small" style="margin:6px 0 6px;gap:6px"><span class="muted">${P ? `${P === "kad" ? "Kad" : "Tunai"} ${RM(mOf(r.id))} · jumlah ` : ""}${RM(r.spent)} / ${RM(r.amount)} · ${isFinite(r.pct) ? r.pct.toFixed(0) + "%" : "—"}</span>${pillB(r)}</div>
+        ${budgetBar(P ? { ...r, pct: r.amount > 0 ? mOf(r.id) / r.amount * 100 : 0 } : r)}
       </li>`).join("")}</ul>` : `<p class="empty">Belum ada bajet. Tetapkan had sebulan bagi setiap kategori — belanja tunai dan kad kredit dikira automatik.</p>`}
-    ${b.unbudgeted.length ? `<p class="small muted" style="margin:10px 0 4px">Belanja tanpa bajet: <b>${RM(b.unbudgetedTotal)}</b> — ${b.unbudgeted.slice(0, 6).map(u => `<button class="ghost sm" data-act="budgetquick" data-cat="${esc(u.cat)}" data-amt="${Math.ceil(u.spent / 10) * 10}" title="Tambah bajet">${esc(u.cat)} ${RM(u.spent)} ＋</button>`).join(" ")}</p>` : ""}
+    ${bm.unbudgeted.length ? `<p class="small muted" style="margin:10px 0 4px">Belanja ${P ? pL + " " : ""}tanpa bajet: <b>${RM(bm.unbudgetedTotal)}</b> — ${bm.unbudgeted.slice(0, 6).map(u => `<button class="ghost sm" data-act="budgetquick" data-cat="${esc(u.cat)}" data-amt="${Math.ceil(u.spent / 10) * 10}" title="Tambah bajet">${esc(u.cat)} ${RM(u.spent)} ＋</button>`).join(" ")}</p>` : ""}
     <form class="add" data-form="budget">
       <label>Kategori<input name="cat" list="budgetcats" required placeholder="cth. Makan"></label>
       <label>Bajet sebulan (RM)<input name="amount" type="number" inputmode="decimal" step="0.01" min="0.01" required></label>
@@ -2654,6 +2658,7 @@ document.addEventListener("click", e => {
     case "txpay": txPay = b.dataset.v; render(); break;
     case "sumpay": sumPay = b.dataset.v; render(); break;
     case "trendpay": trendPay = b.dataset.v; render(); break;
+    case "budgetpay": budgetPay = b.dataset.v; render(); break;
     case "lang": setLang(b.dataset.v || (LANG === "en" ? "ms" : "en")); break;
     case "theme": setTheme(b.dataset.v || (curTheme() === "dark" ? "light" : "dark")); break;
     case "emailtok": makeEmailToken(); break;
