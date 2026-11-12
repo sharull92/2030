@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets, budgetStatus, catKey, applyPlan, planApplied, planMetrics, monthlySaving, nextReview, PLAN_TPL, planMinimum, parseAudit, planAuditImport, manualStart, isCardTx };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets, budgetStatus, catKey, applyPlan, planApplied, planMetrics, monthlySaving, nextReview, PLAN_TPL, planMinimum, parseAudit, planAuditImport, manualStart, isCardTx, periodOf, periodRange, pk };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -594,4 +594,31 @@ test("Ringkasan: baki tunai tidak tolak belanja kad; guna kad kredit dijumlah", 
   assert.equal(L.isCardTx({ card: true }), true);
   const items = L.parseAudit([["Tarikh", "Akaun", "Amaun (RM)", "Jenis", "Kategori", "Dikira Dalam Audit"], [46336, "Kad Kredit MasterCard", -64.81, "Keluar", "Petrol", "Ya"]]);
   assert.equal(L.planAuditImport(L.normalize({}), items, {}).tx[0].card, true);
+});
+
+test("bulan kewangan 26hb–25hb: tempoh, julat, ringkasan bulan & tahun", () => {
+  assert.equal(L.periodOf("2025-12-26", 26), "2026-01");
+  assert.equal(L.periodOf("2026-01-25", 26), "2026-01");
+  assert.equal(L.periodOf("2026-01-26", 26), "2026-02");
+  assert.equal(L.periodOf("2026-12-31", 26), "2027-01");
+  assert.equal(L.periodOf("2026-01-26", 1), "2026-01");
+  const S = L.normalize({ settings: { monthStart: 26 },
+    tx: [
+      { date: "2025-12-24", type: "in", cat: "Gaji", amount: 100 },     // Dis 2025
+      { date: "2025-12-29", type: "in", cat: "Gaji", amount: 3701.23 }, // Jan 2026
+      { date: "2026-01-10", type: "out", cat: "Makan", amount: 50 },    // Jan 2026
+      { date: "2026-01-27", type: "out", cat: "Petrol", amount: 80 },   // Feb 2026
+      { date: "2026-12-28", type: "out", cat: "Makan", amount: 7 }      // Jan 2027
+    ] });
+  assert.deepEqual(L.periodRange(S, "2026-01"), { from: "2025-12-26", to: "2026-01-25" });
+  assert.deepEqual(L.periodRange(L.normalize({}), "2026-02"), { from: "2026-02-01", to: "2026-02-28" });
+  const t = new Date(2026, 10, 20);
+  const jan = L.yearSummary(S, 2026, t, "2026-01");
+  assert.equal(jan.income, 3701.23); assert.equal(jan.spent, 50);
+  const feb = L.yearSummary(S, 2026, t, "2026-02");
+  assert.equal(feb.spent, 80); assert.equal(feb.income, 0);
+  const y26 = L.yearSummary(S, 2026, t);
+  assert.equal(y26.income, 3701.23); assert.equal(y26.spent, 130);   // 24 Dis 2025 → 2025; 28 Dis 2026 → 2027
+  assert.equal(L.monthFlow(S, "2026-01").in, 3701.23);
+  assert.equal(L.budgetStatus(L.normalize({ ...S, budgets: [{ id: "b", cat: "Makan", amount: 100 }] }), "2026-01").rows[0].spent, 50);
 });

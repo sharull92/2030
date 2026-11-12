@@ -314,8 +314,8 @@ function cardCalc(S, card, today) {
   const balance = Math.max(0, spend - paidAmt);
   const limit = Number(card.limit) || 0;
   const util = limit > 0 ? (balance / limit) * 100 : 0;
-  const k = ym(today);
-  const month = rows.filter(t => t.type === "belanja" && String(t.date).slice(0, 7) === k);
+  const k = pkNow(S, today);
+  const month = rows.filter(t => t.type === "belanja" && pk(S, t.date) === k);
   const monthSpend = sum(month, t => t.amount);
   const byCat = {};
   for (const t of month) byCat[t.cat || "Lain-lain"] = (byCat[t.cat || "Lain-lain"] || 0) + (Number(t.amount) || 0);
@@ -323,6 +323,24 @@ function cardCalc(S, card, today) {
   const interest = balance * (Number(card.rate) || 0) / 100 / 12;
   const level = util < 30 ? "sihat" : util <= 70 ? "berhati-hati" : "tinggi";
   return { balance, limit, util, monthSpend, byCat, minPay, interest, level, available: Math.max(0, limit - balance) };
+}
+
+// ---------- bulan kewangan ----------
+// settings.monthStart = hari mula bulan (1–28). Cth. 26: 26 Dis 2025 – 25 Jan 2026 dikira "2026-01".
+const mStart = S => Math.min(28, Math.max(1, Number(S && S.settings && S.settings.monthStart) || 1));
+function periodOf(date, start) {
+  const s = String(date), y = +s.slice(0, 4), m = +s.slice(5, 7), d = +s.slice(8, 10);
+  if (start > 1 && d >= start) return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+  return s.slice(0, 7);
+}
+const pk = (S, date) => periodOf(date, mStart(S));
+const pkNow = (S, today) => pk(S, ymd(today));
+// Julat tarikh bagi bulan kewangan "YYYY-MM".
+function periodRange(S, key) {
+  const st = mStart(S), [y, m] = String(key).split("-").map(Number), p2 = n => String(n).padStart(2, "0");
+  if (st === 1) return { from: `${key}-01`, to: `${key}-${p2(dim(y, m - 1))}` };
+  const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+  return { from: `${py}-${p2(pm)}-${p2(st)}`, to: `${key}-${p2(st - 1)}` };
 }
 
 // Peringatan bayaran: tertunggak bulan ini + akan datang dalam `days` hari.
@@ -414,19 +432,19 @@ function monthOut(S, today) {
 // Jika bulan semasa belum ada "Masuk", pendapatan dirancang ditunjuk sebagai "dijangka" (tidak dicampur).
 // Transaksi biasa yang sebenarnya belian kad kredit (cth. baris akaun "Kad Kredit" dari import audit).
 const isCardTx = t => !!t.card || /·\s*Kad Kredit\b/i.test(String(t.note || ""));
-function yearSummary(S, year, today) {
-  const Y = String(year), curYM = ym(today);
-  const all = !Number(year);
-  const inY = t => all || String(t.date).slice(0, 4) === Y;
+function yearSummary(S, year, today, month) {
+  const Y = String(year), curYM = pkNow(S, today);
+  const all = !Number(year) && !month;
+  const inY = t => month ? pk(S, t.date) === month : all || pk(S, t.date).slice(0, 4) === Y;
   const txOut = S.tx.filter(t => t.type === "out" && inY(t) && t.cat !== "Kad kredit");
   const cardSpend = S.cardTx.filter(t => t.type === "belanja" && inY(t));
   const txIn = S.tx.filter(t => t.type === "in" && inY(t));
   const byCat = {};
   for (const t of [...txOut, ...cardSpend]) { const c = String(t.cat || "Lain-lain").trim() || "Lain-lain"; byCat[c] = (byCat[c] || 0) + (Number(t.amount) || 0); }
-  const months = new Set([...txOut, ...cardSpend, ...txIn].map(t => String(t.date).slice(0, 7)));
-  const incCurrent = all || Number(year) === today.getFullYear();
+  const months = new Set([...txOut, ...cardSpend, ...txIn].map(t => pk(S, t.date)));
+  const incCurrent = month ? month === curYM : all || Y === curYM.slice(0, 4);
   const income = sum(txIn, t => t.amount);
-  const receivedNow = sum(S.tx.filter(t => t.type === "in" && String(t.date).slice(0, 7) === curYM), t => t.amount);
+  const receivedNow = sum(S.tx.filter(t => t.type === "in" && pk(S, t.date) === curYM), t => t.amount);
   const expected = incCurrent && receivedNow === 0 ? sum(S.incomes, i => i.amount) : 0;
   const spent = sum(txOut, t => t.amount) + sum(cardSpend, t => t.amount);
   const pending = incCurrent ? monthOut(S, today).pending : 0;
@@ -445,7 +463,7 @@ function yearSummary(S, year, today) {
 // Aliran sebulan, sama definisi dengan ringkasan: masuk = transaksi Masuk; keluar = transaksi Keluar
 // (kecuali bayaran bil kad) + belanja kad kredit.
 function monthFlow(S, m) {
-  const inM = t => String(t.date).slice(0, 7) === m;
+  const inM = t => pk(S, t.date) === m;
   return {
     m,
     in: sum(S.tx.filter(t => t.type === "in" && inM(t)), t => t.amount),
@@ -491,7 +509,7 @@ function nextDue(dueDay, today) {
 
 // Data laporan bulanan (m = "YYYY-MM"). Definisi sama dengan ringkasan: bayaran bil kad tidak dikira dalam Keluar.
 function monthReport(S, m, today) {
-  const inM = t => String(t.date).slice(0, 7) === m;
+  const inM = t => pk(S, t.date) === m;
   const cardNm = id => (S.cards.find(c => c.id === id) || { name: "(kad dipadam)" }).name;
   const flow = monthFlow(S, m);
   const rows = [
@@ -521,7 +539,7 @@ function monthReport(S, m, today) {
 // Helaian Excel sebagai tatasusunan baris. m = "YYYY-MM" atau "" (semua data).
 // Setiap helaian: { name, rows, money: [indeks lajur RM], grams: [indeks lajur gram], dates: [indeks lajur tarikh] }
 function excelSheets(S, m, today) {
-  const inR = t => !m || String(t.date).slice(0, 7) === m;
+  const inR = t => !m || pk(S, t.date) === m;
   const cardNm = id => (S.cards.find(c => c.id === id) || { name: "(kad dipadam)" }).name;
   const KL = { emas: "Emas", asb: "ASB", th: "Tabung Haji" };
   const n2 = v => Math.round((Number(v) || 0) * 100) / 100;
@@ -580,7 +598,7 @@ function excelSheets(S, m, today) {
     { name: "Simpanan", rows: sim, money: [4], grams: [3], dates: [0], cols: [26, 14, 10, 10, 13, 24] },
     { name: "Komitmen & hutang", rows: km, money: [3, 4], cols: [24, 10, 9, 14, 14, 9, 16] },
     ...(S.budgets.length ? [{ name: "Bajet", money: [2, 3, 4], cols: [10, 22, 13, 13, 13, 7, 12], rows: (() => {
-      const months = m ? [m] : [...new Set([...S.tx, ...S.cardTx].map(t => String(t.date).slice(0, 7)))].filter(x => /^\d{4}-\d{2}$/.test(x)).sort();
+      const months = m ? [m] : [...new Set([...S.tx, ...S.cardTx].map(t => pk(S, t.date)))].filter(x => /^\d{4}-\d{2}$/.test(x)).sort();
       const out = [["Bulan", "Kategori", "Bajet (RM)", "Belanja (RM)", "Baki (RM)", "%", "Status"]];
       for (const mm of months) for (const b of budgetStatus(S, mm).rows)
         out.push([fmtYMx(mm), b.cat, n2(b.amount), n2(b.spent), n2(b.left), isFinite(b.pct) ? Math.round(b.pct) : "", { lebih: "Lebih bajet", hampir: "Hampir", ok: "OK" }[b.level]]);
@@ -596,8 +614,8 @@ const catKey = c => String(c || "Lain-lain").trim().replace(/\s+/g, " ").toLower
 function spendByCat(S, m) {
   const out = {};
   const add = (cat, amt) => { const k = catKey(cat); if (!out[k]) out[k] = { label: String(cat || "Lain-lain").trim() || "Lain-lain", amount: 0 }; out[k].amount += Number(amt) || 0; };
-  for (const t of S.tx) if (t.type === "out" && t.cat !== "Kad kredit" && String(t.date).slice(0, 7) === m) add(t.cat, t.amount);
-  for (const t of S.cardTx) if (t.type === "belanja" && String(t.date).slice(0, 7) === m) add(t.cat, t.amount);
+  for (const t of S.tx) if (t.type === "out" && t.cat !== "Kad kredit" && pk(S, t.date) === m) add(t.cat, t.amount);
+  for (const t of S.cardTx) if (t.type === "belanja" && pk(S, t.date) === m) add(t.cat, t.amount);
   return out;
 }
 function budgetStatus(S, m) {
@@ -678,7 +696,7 @@ function planMinimum(S, today) {
   const years = Math.max(1, 2030 - y);
   const r2 = n => Math.round(n * 100) / 100, r3 = n => Math.round(n * 1000) / 1000;
   // Guna baki di AWAL bulan (tolak simpanan bulan ini) supaya minimum bulan ini tidak berubah bila anda menyimpan.
-  const ms = monthlySaving(S, ym(today));
+  const ms = monthlySaving(S, pkNow(S, today));
   const g = r3(Math.max(0, M.emas.target - (M.emas.have - ms.g)) / months);
   const price = Number(S.gold.price) || 0;
   return {
@@ -702,7 +720,7 @@ function planMetrics(S) {
 }
 // Simpanan bulan m (rekod simpanan): dana kecemasan (ASB+TH, bersih) & gram emas.
 function monthlySaving(S, m) {
-  const ds = S.deposits.filter(d => String(d.date).slice(0, 7) === m);
+  const ds = S.deposits.filter(d => pk(S, d.date) === m);
   const sgn = d => d.dir === "out" ? -1 : 1;
   return {
     rm: Math.round(sum(ds.filter(d => d.kind === "asb" || d.kind === "th"), d => sgn(d) * (Number(d.amount) || 0)) * 100) / 100,
@@ -813,7 +831,7 @@ function planAuditImport(S, items, opt = {}) {
   }
   const fresh = out.filter(t => { if (have.has(t.id)) { skipped.dup++; return false; } return true; }).sort((a, b) => a.date.localeCompare(b.date));
   const months = {};
-  for (const t of fresh) { const m = t.date.slice(0, 7); months[m] = months[m] || { in: 0, out: 0, n: 0 }; months[m][t.type] += t.amount; months[m].n++; }
+  for (const t of fresh) { const m = pk(S, t.date); months[m] = months[m] || { in: 0, out: 0, n: 0 }; months[m][t.type] += t.amount; months[m].n++; }
   for (const m of Object.values(months)) { m.in = Math.round(m.in * 100) / 100; m.out = Math.round(m.out * 100) / 100; }
   return { tx: fresh, months, skipped };
 }
@@ -1056,9 +1074,9 @@ const today = () => new Date();
 
 let S = load();
 let tab = (() => { try { return localStorage.getItem(KEY + ":tab") || "ringkasan"; } catch { return "ringkasan"; } })();
-let txMonth = ym(today());
+let txMonth = pkNow(S, today());
 let trendSel = "6";
-let sumYear = new Date().getFullYear();
+let sumYear = new Date().getFullYear(), sumMonth = "";
 
 function load() {
   try { return normalize(JSON.parse(localStorage.getItem(KEY))); } catch { return normalize(null); }
@@ -1463,9 +1481,9 @@ function nextSteps(c) {
     if (e.stage === 1) s.push(`Dana kecemasan stage 1: tambah ${RM(e.s1.need)} lagi dalam ASB${isFinite(e.s1.perMonth) ? ` (${RM(e.s1.perMonth)} sebulan)` : ""}.`);
     else if (e.stage === 2) s.push(`Dana kecemasan stage 2: tambah ${RM(e.s2.need)} lagi dalam Tabung Haji${isFinite(e.s2.perMonth) ? ` (${RM(e.s2.perMonth)} sebulan)` : ""}.`); }
   for (const cd of S.cards) { const k = cardCalc(S, cd, today()); if (k.util >= 30) s.push(`Kad ${cd.name} guna ${k.util.toFixed(0)}% had — cuba kurangkan bawah 30%.`); }
-  for (const r of budgetStatus(S, ym(today())).rows) if (r.level === "lebih") s.push(`Bajet ${r.cat} bulan ini lebih ${RM(-r.left)}.`);
+  for (const r of budgetStatus(S, pkNow(S, today())).rows) if (r.level === "lebih") s.push(`Bajet ${r.cat} bulan ini lebih ${RM(-r.left)}.`);
   { const rv = nextReview(S, today()); if (rv.due) s.push(`Semakan 6 bulan ${fmtYM(rv.ym)}: nilai apa yang tercapai & apa perlu diubah (tab Pelan 2030).`); }
-  if (ym(today()) >= PLAN_START) { const ms = monthlySaving(S, ym(today()));
+  if (pkNow(S, today()) >= PLAN_START) { const ms = monthlySaving(S, pkNow(S, today()));
     if (ms.rm < PLAN_MONTHLY_RM) s.push(`Simpanan kecemasan bulan ini ${RM(ms.rm)} / ${RM(PLAN_MONTHLY_RM)}.`);
     if (ms.g < 0.6) s.push(`Emas bulan ini ${fmtG(ms.g)} / 0.6–0.7 g.`); }
   if (!planApplied(S)) s.push("Susun tab Pelan 2030 ikut Pelan Tindakan 2026–2030.");
@@ -1481,9 +1499,16 @@ function nextSteps(c) {
 /* ---------- tab ---------- */
 function vRingkasan() {
   const c = calc(S), t = today();
-  const ys = yearSummary(S, sumYear, t);
-  const tdata = trendMonths(trendSel, t).map(m => monthFlow(S, m));
-  const years = [...new Set([2026, 2027, 2028, 2029, 2030, t.getFullYear(), ...S.tx.map(x => +String(x.date).slice(0, 4)), ...S.cardTx.map(x => +String(x.date).slice(0, 4))])].filter(y => y > 2000).sort();
+  if (sumMonth && (!sumYear || sumMonth.slice(0, 4) !== String(sumYear))) sumMonth = "";
+  const ys = yearSummary(S, sumYear, t, sumMonth);
+  const curP = pkNow(S, t);
+  const tdata = trendMonths(trendSel, new Date(+curP.slice(0, 4), +curP.slice(5, 7) - 1, 1)).map(m => monthFlow(S, m));
+  const rngTxt = (() => {
+    if (sumMonth) { const r = periodRange(S, sumMonth); return `${fmtD(r.from)} – ${fmtD(r.to)}`; }
+    if (sumYear && mStart(S) > 1) { const a = periodRange(S, sumYear + "-01"), z = periodRange(S, sumYear + "-12"); return `${fmtD(a.from)} – ${fmtD(z.to)}`; }
+    return "";
+  })();
+  const years = [...new Set([2026, 2027, 2028, 2029, 2030, t.getFullYear(), ...S.tx.map(x => +pk(S, x.date).slice(0, 4)), ...S.cardTx.map(x => +pk(S, x.date).slice(0, 4))])].filter(y => y > 2000).sort();
   const days = Math.max(0, Math.ceil((END - t) / 86400000));
   const yr = t.getFullYear();
   const stamps = [2026, 2027, 2028, 2029, 2030].map(y => `<span class="stamp ${y === yr ? "now" : y < yr ? "past" : ""}">${y}</span>`).join("");
@@ -1504,9 +1529,13 @@ function vRingkasan() {
   </section>
 
   <section class="card">
-    <div class="row between"><h2>Ringkasan ${sumYear || "2026–2030"}</h2>
-      <select data-act="sumyear" aria-label="Pilih tahun" style="width:auto"><option value="0" ${sumYear ? "" : "selected"}>Semua tahun</option>${years.map(y => `<option value="${y}" ${y === sumYear ? "selected" : ""}>Tahun ${y}</option>`).join("")}</select></div>
-    <div class="row between small muted" style="margin:-2px 0 8px"><span>${ys.months} bulan direkod</span>${dsrPill(c)}</div>
+    <div class="row between"><h2>Ringkasan ${sumMonth ? fmtYM(sumMonth) : sumYear || "2026–2030"}</h2></div>
+    <div class="row" style="gap:8px;margin:2px 0 6px">
+      <select data-act="sumyear" aria-label="Pilih tahun" style="width:auto;flex:1"><option value="0" ${sumYear ? "" : "selected"}>Semua tahun</option>${years.map(y => `<option value="${y}" ${y === sumYear ? "selected" : ""}>Tahun ${y}</option>`).join("")}</select>
+      ${sumYear ? `<select data-act="summonth" aria-label="Pilih bulan" style="width:auto;flex:1"><option value="" ${sumMonth ? "" : "selected"}>Sepanjang tahun</option>${Array.from({ length: 12 }, (_, i) => `${sumYear}-${String(i + 1).padStart(2, "0")}`).map(k => `<option value="${k}" ${k === sumMonth ? "selected" : ""}>${fmtYM(k)}${k === curP ? " · bulan ini" : ""}</option>`).join("")}</select>` : ""}
+    </div>
+    ${rngTxt ? `<div class="small muted" style="margin:0 0 4px">${rngTxt}</div>` : ""}
+    <div class="row between small muted" style="margin:0 0 8px"><span>${sumMonth ? "" : ys.months + " bulan direkod"}</span>${dsrPill(c)}</div>
     <div class="grid3">
       <div class="stat"><span>Pendapatan diterima</span><b>${RM(ys.income)}</b>${ys.expected ? `<span>+ ${RM(ys.expected)} dijangka bulan ini (belum direkod)</span>` : ""}</div>
       <div class="stat"><span>Duit keluar</span><b class="${ys.spent ? "neg" : ""}">${RM(ys.spent)}</b>${ys.pending ? `<span>+ ${RM(ys.pending)} komitmen bulan ini belum bayar</span>` : ""}</div>
@@ -1523,9 +1552,9 @@ function vRingkasan() {
     ${bar(c.passivePct)}
   </section>
 
-  ${S.budgets.length ? (() => { const bs = budgetStatus(S, ym(t)); const warn = bs.rows.filter(r => r.level !== "ok");
+  ${S.budgets.length ? (() => { const bs = budgetStatus(S, pkNow(S, t)); const warn = bs.rows.filter(r => r.level !== "ok");
     return `<section class="card">
-    <div class="row between"><h2>Bajet ${fmtYM(ym(t))}</h2><button class="sm" data-tab="kewangan" data-goto="bajet">Urus</button></div>
+    <div class="row between"><h2>Bajet ${fmtYM(pkNow(S, t))}</h2><button class="sm" data-tab="kewangan" data-goto="bajet">Urus</button></div>
     <div class="row between small"><span>${RM(bs.spent)} / ${RM(bs.budget)}</span><span>${bs.pct.toFixed(0)}%</span></div>
     ${budgetBar({ pct: bs.pct, level: bs.pct > 100 ? "lebih" : bs.pct >= 80 ? "hampir" : "ok" })}
     ${warn.length ? `<ul class="list" style="margin-top:6px">${warn.map(r => `<li style="padding:6px 0"><div class="grow">${esc(r.cat)}<div class="small muted">${RM(r.spent)} / ${RM(r.amount)}</div></div><span class="pill ${r.level === "lebih" ? "bad" : "warn"}">${r.level === "lebih" ? "Lebih " + RM(-r.left) : r.pct.toFixed(0) + "%"}</span></li>`).join("")}</ul>` : `<p class="small muted" style="margin:.4rem 0 0">Semua kategori dalam bajet 👍</p>`}
@@ -1565,7 +1594,7 @@ function vRingkasan() {
     <p class="small muted">${em.stage === 3 ? "Kedua-dua stage tercapai 🎉" : em.stage === 1 ? `Stage 1 (ASB): ${RM(asbHave(S))} / ${RM(S.asb.s1)}` : `Stage 1 (ASB) ✓ · Stage 2 (Tabung Haji): ${RM(thHave(S))} / ${RM(S.th.target)}`}</p>
   </section>
 
-  ${(() => { const MIN = planMinimum(S, t), PM = planMetrics(S), ms = monthlySaving(S, ym(t));
+  ${(() => { const MIN = planMinimum(S, t), PM = planMetrics(S), ms = monthlySaving(S, pkNow(S, t));
     const row = (label, val, sub, pct, cls) => `<li style="padding:8px 0;align-items:flex-start"><div class="grow"><div class="row between"><span>${label}</span><b class="num">${val}</b></div>${sub ? `<div class="small muted" style="margin-top:2px">${sub}</div>` : ""}${pct != null ? `<div style="margin-top:6px">${bar(pct, cls)}</div>` : ""}</div></li>`;
     const done = (m) => m.target && m.have >= m.target;
     return `<section class="card">
@@ -1587,7 +1616,7 @@ function vRingkasan() {
 
 // Pemilih bulan: "Semua bulan" + bulan yang ada rekod (terbaru dahulu) + bulan semasa.
 function monthSelect(act, value, dates) {
-  const ms = [...new Set([ym(today()), ...dates.map(d => String(d).slice(0, 7)).filter(m => /^\d{4}-\d{2}$/.test(m)), ...(value ? [value] : [])])].sort().reverse();
+  const ms = [...new Set([pkNow(S, today()), ...dates.map(d => pk(S, d)).filter(m => /^\d{4}-\d{2}$/.test(m)), ...(value ? [value] : [])])].sort().reverse();
   return `<select data-act="${act}" aria-label="Tapis bulan" style="width:auto">
     <option value="" ${value ? "" : "selected"}>Semua bulan</option>
     ${ms.map(m => `<option value="${m}" ${m === value ? "selected" : ""}>${fmtYM(m)}</option>`).join("")}
@@ -1595,12 +1624,12 @@ function monthSelect(act, value, dates) {
 }
 // Senarai dengan tajuk bulan apabila "Semua bulan" dipilih.
 const withMonthHeads = (rows, all, item) => rows.map((r, i) => {
-  const m = String(r.date).slice(0, 7);
-  const head = all && (i === 0 || String(rows[i - 1].date).slice(0, 7) !== m) ? `<li class="small muted" style="padding-top:14px;font-weight:600">${fmtYM(m)}</li>` : "";
+  const m = pk(S, r.date);
+  const head = all && (i === 0 || pk(S, rows[i - 1].date) !== m) ? `<li class="small muted" style="padding-top:14px;font-weight:600">${fmtYM(m)}</li>` : "";
   return head + item(r);
 }).join("");
 
-let reportMonth = ym(new Date());
+let reportMonth = pkNow(S, new Date());
 function reportHTML(r) {
   const R = n => "RM " + (Number(n) || 0).toLocaleString("ms-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const now = new Date().toLocaleString(LOC(), { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -1709,7 +1738,7 @@ async function exportExcel(all) {
   }
 }
 
-let budgetMonth = ym(new Date());
+let budgetMonth = pkNow(S, new Date());
 const BUDGET_CATS = ["Makan", "Minyak", "Barang dapur", "Rumah", "Utiliti", "Telefon / internet", "Anak / sekolah", "Keluarga", "Pakaian", "Kesihatan", "Hiburan", "Sedekah", "Lain-lain"];
 function budgetBar(r) {
   const cls = r.level === "lebih" ? "" : r.level === "hampir" ? "amber" : "";
@@ -1745,7 +1774,7 @@ function vBudget() {
 }
 // Amaran selepas rekod belanja jika bajet kategori itu hampir habis / lebih.
 function budgetWarn(cat, date) {
-  const m = String(date).slice(0, 7);
+  const m = pk(S, date);
   const r = budgetStatus(S, m).rows.find(x => catKey(x.cat) === catKey(cat));
   if (!r || r.level === "ok") return "";
   return r.level === "lebih" ? ` · ⚠️ Bajet ${r.cat} lebih ${RM(-r.left)}` : ` · Bajet ${r.cat} ${r.pct.toFixed(0)}% digunakan`;
@@ -1753,7 +1782,7 @@ function budgetWarn(cat, date) {
 
 function vKewangan() {
   const c = calc(S), t = today();
-  const inSel = x => !txMonth || String(x.date).slice(0, 7) === txMonth;
+  const inSel = x => !txMonth || pk(S, x.date) === txMonth;
   const alloc = Object.assign({}, ...S.cards.map(c => cardAlloc(S, c.id)));
   const cardRows = S.cardTx.filter(x => x.type === "belanja" && inSel(x)).map(x => ({ ...x, _card: true }));
   const rows = [...S.tx.filter(inSel), ...cardRows].sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -1861,7 +1890,7 @@ function vKewangan() {
 }
 
 const CARD_CATS = ["Makan", "Minyak", "Barang dapur", "Bil", "Belian dalam talian", "Pakaian", "Kesihatan", "Kursus", "Perjalanan", "Lain-lain"];
-let cardMonth = ym(today()), cardFilter = "";
+let cardMonth = pkNow(S, today()), cardFilter = "";
 function cardDueLine(c, k) {
   if (k.balance <= 0) return `<div style="margin-top:6px"><span class="pill ok">✓ Sudah bayar semua</span></div>`;
   const nd = nextDue(c.dueDay, today());
@@ -1874,7 +1903,7 @@ function vKad() {
   const totBal = sum(cards, x => x.k.balance), totLim = sum(cards, x => x.k.limit);
   const totUtil = totLim > 0 ? totBal / totLim * 100 : 0;
   const allocAll = Object.assign({}, ...S.cards.map(c => cardAlloc(S, c.id)));
-  const rows = S.cardTx.filter(x => (!cardMonth || String(x.date).slice(0, 7) === cardMonth) && (!cardFilter || x.cardId === cardFilter)).sort((a, b) => b.date.localeCompare(a.date));
+  const rows = S.cardTx.filter(x => (!cardMonth || pk(S, x.date) === cardMonth) && (!cardFilter || x.cardId === cardFilter)).sort((a, b) => b.date.localeCompare(a.date));
   const mSpend = sum(rows.filter(r => r.type === "belanja"), r => r.amount), mPaid = sum(rows.filter(r => r.type === "bayar"), r => r.amount);
   const cname = id => (S.cards.find(c => c.id === id) || { name: "(kad dipadam)" }).name;
   const lvl = l => l === "sihat" ? "ok" : l === "tinggi" ? "bad" : "warn";
@@ -1979,7 +2008,7 @@ function vPelan() {
   const t = today(), cy = t.getFullYear(), M = planMetrics(S);
   const done = S.goals.filter(g => g.done).length;
   const yearPct = y => { const gs = S.goals.filter(g => +g.year === y); return gs.length ? gs.filter(g => g.done).length / gs.length * 100 : 0; };
-  const curM = ym(t), ms = monthlySaving(S, curM);
+  const curM = pkNow(S, t), ms = monthlySaving(S, curM);
   const started = curM >= PLAN_START;
   const MIN = planMinimum(S, t), left = MIN.months, needRM = MIN.simpanan, needG = MIN.emas;
   const rv = nextReview(S, t);
@@ -2258,7 +2287,11 @@ function vTetapan() {
     <form class="add" data-form="settings">
       <label>Nama<input name="name" value="${esc(S.settings.name)}"></label>
       <label>Sasaran pasif (RM/bln)<input name="targetPassive" type="number" inputmode="decimal" step="0.01" min="0" value="${S.settings.targetPassive}"></label>
+      <label>Bulan kewangan bermula hari<select name="monthStart">${Array.from({ length: 28 }, (_, i) => i + 1).map(d => `<option value="${d}" ${d === mStart(S) ? "selected" : ""}>${d === 1 ? "1 (bulan kalendar)" : d}</option>`).join("")}</select></label>
       <button class="primary">Simpan</button>
+    </form>
+    <p class="small muted" style="margin:6px 0 0">${mStart(S) > 1 ? `Contoh: Januari = ${fmtD(periodRange(S, "2026-01").from)} – ${fmtD(periodRange(S, "2026-01").to)}. Digunakan untuk ringkasan, trend, bajet, transaksi, laporan & simpanan bulanan.` : "Bulan dikira ikut kalendar (1 hb – hujung bulan)."}</p>
+    <form hidden>
     </form>
   </section>
   ${vNotify()}
@@ -2475,7 +2508,7 @@ document.addEventListener("submit", e => {
     case "tx": {
       const msg = recordTx(d);
       if (d.via || / · /.test(msg)) toast(msg);
-      if (txMonth) txMonth = d.date.slice(0, 7);
+      if (txMonth) txMonth = pk(S, d.date);
       break;
     }
     case "deposit": {
@@ -2506,7 +2539,7 @@ document.addEventListener("submit", e => {
       if (num(d.opening) > 0) S.cardTx.push({ id: uid(), cardId: card.id, date: ymd(today()), type: "awal", amount: num(d.opening), cat: "Baki awal", note: "" });
       break;
     }
-    case "cardtx": S.cardTx.push({ id: uid(), cardId: d.cardId, date: d.date, type: "belanja", amount: num(d.amount), cat: d.cat.trim(), note: d.note.trim() }); if (cardMonth) cardMonth = d.date.slice(0, 7); toast("Belanja kad direkod" + budgetWarn(d.cat, d.date)); break;
+    case "cardtx": S.cardTx.push({ id: uid(), cardId: d.cardId, date: d.date, type: "belanja", amount: num(d.amount), cat: d.cat.trim(), note: d.note.trim() }); if (cardMonth) cardMonth = pk(S, d.date); toast("Belanja kad direkod" + budgetWarn(d.cat, d.date)); break;
     case "budget": {
       const cat = d.cat.trim(), ex = S.budgets.find(x => catKey(x.cat) === catKey(cat));
       if (ex) { ex.amount = num(d.amount); toast("Bajet " + ex.cat + " dikemas kini"); }
@@ -2522,7 +2555,12 @@ document.addEventListener("submit", e => {
       }
       break;
     }
-    case "settings": Object.assign(S.settings, { name: d.name.trim(), targetPassive: num(d.targetPassive), }); toast("Disimpan"); break;
+    case "settings": {
+      const ms0 = mStart(S);
+      Object.assign(S.settings, { name: d.name.trim(), targetPassive: num(d.targetPassive), monthStart: Math.min(28, Math.max(1, num(d.monthStart) || 1)) });
+      if (mStart(S) !== ms0) { const now = pkNow(S, today()); txMonth = cardMonth = reportMonth = budgetMonth = now; sumMonth = ""; }
+      toast("Disimpan"); break;
+    }
   }
   commit();
 });
@@ -2643,7 +2681,8 @@ document.addEventListener("change", e => {
   if (act === "auditthird" && AUD) { AUD.excludeThirdParty = el.checked; render(); }
   if (act === "budgetmonth" && el.value) { budgetMonth = el.value; render(); }
   if (act === "budgetamt") { const x = S.budgets.find(y => y.id === el.dataset.id); if (x && num(el.value) >= 0) { x.amount = num(el.value); commit(); } }
-  if (act === "sumyear") { sumYear = num(el.value); render(); }
+  if (act === "sumyear") { sumYear = num(el.value); sumMonth = ""; render(); }
+  if (act === "summonth") { sumMonth = el.value; render(); }
   if (act === "trendsel") { trendSel = el.value; render(); }
   if (act === "cardmonth") { cardMonth = el.value; render(); }
   if (act === "notifydays") { S.settings.notifyDays = num(el.value); commit(); }
@@ -2654,6 +2693,7 @@ document.addEventListener("change", e => {
 });
 
 window.addEventListener("storage", e => { if (e.key === KEY) { S = load(); render(); } });
+if (S.settings.monthStart == null) { S.settings.monthStart = 26; save(); const now = pkNow(S, today()); txMonth = cardMonth = reportMonth = budgetMonth = now; }
 render();
 trNode(document.body);
 initCloud();

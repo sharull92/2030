@@ -16,12 +16,18 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 5. **Niaga** — projek dengan peringkat Idea → Validasi → Bina → Lancar → Skala + senarai langkah proses; templat idea.
 6. **Tetapan** — penyegerakan awan (atas); nama, sasaran pasif; **Item terpadam** (tong sampah 30 hari + "Cari item terpadam" dalam salinan lama: sandaran-sebelum-kongsi, jadual `plans` lama, `plan_history`); notifikasi tarikh bayar (N hari sebelum); eksport kalendar .ics; pasang app; penyegerakan awan; sandaran/pulih JSON, padam semua.
 
+## Bulan kewangan (26hb–25hb)
+- `settings.monthStart` (1–28, lalai 26 dipasang sekali semasa mula jika tiada). 26 → "Jan 2026" = 26 Dis 2025 – 25 Jan 2026; "Tahun 2026" = 26 Dis 2025 – 25 Dis 2026. Ubah di Tetapan → Profil → "Bulan kewangan bermula hari" (1 = bulan kalendar).
+- Logik: `mStart(S)`, `periodOf(date, start)`, `pk(S, date)` (kunci "YYYY-MM" tempoh), `pkNow(S, today)`, `periodRange(S, key)` → `{from, to}`. SEMUA pengumpulan ikut bulan (Ringkasan, `yearSummary`, `monthFlow`/trend, `cardCalc`, `spendByCat`/bajet, `monthReport`/PDF, `excelSheets`, `monthlySaving`, `planMinimum`, pratonton import audit, senarai transaksi/kad) guna `pk()` — bukan `date.slice(0,7)`.
+- Kekal ikut kalendar: tarikh bayar komitmen/hutang/kad, kunci `paid` (`monthOut`), notifikasi, .ics, `nextReview`, gabungan hibah audit.
+- Ringkasan: pilih tahun + pilih bulan (`sumMonth`, "Sepanjang tahun" atau 12 bulan; hanya bila tahun dipilih) → `yearSummary(S, year, today, month)`; julat tarikh dipapar di bawah tajuk.
+
 ## Model data (satu objek `S`)
 ```js
 {
   v: 8,
   updatedAt: Number,   // ms, untuk penyegerakan awan (v2)
-  settings: { name, targetPassive, emergencyMonths, notify, notifyDays },
+  settings: { name, targetPassive, emergencyMonths, notify, notifyDays, monthStart },
   savings: Number,
   incomes:     [{ id, name, type: "aktif"|"sampingan"|"pasif", amount }],
   commitments: [{ id, name, amount, day }],

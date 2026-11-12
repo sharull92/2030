@@ -3,6 +3,14 @@
 // Nama kategori, nama kad & nota pengguna sengaja TIDAK diterjemah.
 window.I18N_EN = {
 exact: {
+"Pilih bulan": "Choose month",
+"Bulan kewangan bermula hari": "Financial month starts on day",
+"1 (bulan kalendar)": "1 (calendar month)",
+"Bulan dikira ikut kalendar (1 hb – hujung bulan).": "Months follow the calendar (1st – end of month).",
+"Contoh: Januari = {n} {m} {n} – {n} {m} {n}. Digunakan untuk ringkasan, trend, bajet, transaksi, laporan & simpanan bulanan.": "Example: January = {n} {m} {n} – {n} {m} {n}. Used for summary, trend, budget, transactions, reports & monthly savings.",
+"{n} {m} {n} – {n} {m} {n}": "{n} {m} {n} – {n} {m} {n}",
+"{m} {n} · bulan ini": "{m} {n} · this month",
+"Ringkasan {m} {n}": "Summary {m} {n}",
 "Baki tunai": "Cash balance",
 "Guna kad kredit": "Credit card used",
 "Belanja kad belum bayar tidak ditolak": "Unpaid card spending not deducted",
