@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets, budgetStatus, catKey, applyPlan, planApplied, planMetrics, monthlySaving, nextReview, PLAN_TPL, planMinimum, parseAudit, planAuditImport, manualStart };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets, budgetStatus, catKey, applyPlan, planApplied, planMetrics, monthlySaving, nextReview, PLAN_TPL, planMinimum, parseAudit, planAuditImport, manualStart, isCardTx };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -573,4 +573,25 @@ test("import audit Excel: baca, langkau Dikira=Tidak, gabung hibah, potong ikut 
   const tp = L.parseAudit([rows[0], [46031, "", "Bank A", "TRF", "PEKERJA | KUTIPAN", null, 300, 300, "Masuk", "Kutipan daripada pekerja asing", "Pihak ketiga masuk", "Ya"], rows[1]]);
   const P4 = L.planAuditImport(L.normalize({}), tp, { excludeThirdParty: true });
   assert.equal(P4.tx.length, 1); assert.equal(P4.skipped.thirdParty, 1);
+});
+
+test("Ringkasan: baki tunai tidak tolak belanja kad; guna kad kredit dijumlah", () => {
+  const S = L.normalize({
+    cards: [{ id: "k", name: "Visa", limit: 5000, dueDay: 15 }],
+    tx: [
+      { date: "2026-11-01", type: "in", cat: "Gaji", amount: 5000 },
+      { date: "2026-11-02", type: "out", cat: "Makan", amount: 100 },
+      { date: "2026-11-10", type: "out", cat: "Kad kredit", amount: 200, note: "Bayar Visa" },     // bil kad = duit keluar tunai
+      { date: "2026-11-11", type: "out", cat: "Petrol", amount: 64.81, note: "SHELL · Kad Kredit MasterCard" }  // baris kad dari audit
+    ],
+    cardTx: [{ cardId: "k", date: "2026-11-03", type: "belanja", amount: 300 }, { cardId: "k", date: "2026-11-10", type: "bayar", amount: 200 }]
+  });
+  const y = L.yearSummary(S, 2026, new Date(2026, 10, 20));
+  assert.equal(y.spent, 100 + 64.81 + 300);          // duit keluar (perbelanjaan) termasuk belanja kad
+  assert.equal(y.cash, 5000 - 100 - 200);             // tunai: tolak bil kad, bukan belanja kad
+  assert.equal(y.cardUsed, 300 + 64.81);
+  assert.equal(y.cardUnpaid, 100);
+  assert.equal(L.isCardTx({ card: true }), true);
+  const items = L.parseAudit([["Tarikh", "Akaun", "Amaun (RM)", "Jenis", "Kategori", "Dikira Dalam Audit"], [46336, "Kad Kredit MasterCard", -64.81, "Keluar", "Petrol", "Ya"]]);
+  assert.equal(L.planAuditImport(L.normalize({}), items, {}).tx[0].card, true);
 });

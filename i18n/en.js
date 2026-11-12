@@ -3,6 +3,12 @@
 // Nama kategori, nama kad & nota pengguna sengaja TIDAK diterjemah.
 window.I18N_EN = {
 exact: {
+"Baki tunai": "Cash balance",
+"Guna kad kredit": "Credit card used",
+"Belanja kad belum bayar tidak ditolak": "Unpaid card spending not deducted",
+"Belum bayar sekarang RM {n}": "Unpaid now RM {n}",
+"Semua kad sudah dibayar": "All cards paid",
+"Tiada kad direkod": "No cards recorded",
 "RM {n} / RM {n} · {n}%": "RM {n} / RM {n} · {n}%",
 "Sembunyi bahagian": "Hide section",
 "Tunjuk bahagian": "Show section",

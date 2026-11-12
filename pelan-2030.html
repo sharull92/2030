@@ -412,6 +412,8 @@ function monthOut(S, today) {
 
 // Ringkasan setahun (year = 0 → semua tahun). Pendapatan = transaksi "Masuk" sebenar sahaja.
 // Jika bulan semasa belum ada "Masuk", pendapatan dirancang ditunjuk sebagai "dijangka" (tidak dicampur).
+// Transaksi biasa yang sebenarnya belian kad kredit (cth. baris akaun "Kad Kredit" dari import audit).
+const isCardTx = t => !!t.card || /·\s*Kad Kredit\b/i.test(String(t.note || ""));
 function yearSummary(S, year, today) {
   const Y = String(year), curYM = ym(today);
   const all = !Number(year);
@@ -429,7 +431,15 @@ function yearSummary(S, year, today) {
   const spent = sum(txOut, t => t.amount) + sum(cardSpend, t => t.amount);
   const pending = incCurrent ? monthOut(S, today).pending : 0;
   const balance = income - spent;
-  return { income, expected, spent, pending, balance, projected: balance + expected - pending, byCat, months: months.size };
+  // Baki TUNAI: duit masuk − duit yang benar-benar keluar dari bank/tunai (termasuk bayaran bil kad),
+  // belanja kad kredit TIDAK ditolak sehingga bil kad dibayar.
+  const cashOut = sum(S.tx.filter(t => t.type === "out" && inY(t) && !isCardTx(t)), t => t.amount);
+  const cash = Math.round((income - cashOut) * 100) / 100;
+  const cardUsed = Math.round((sum(cardSpend, t => t.amount) + sum(S.tx.filter(t => t.type === "out" && inY(t) && isCardTx(t)), t => t.amount)) * 100) / 100;
+  const cardPaid = Math.round((sum(S.cardTx.filter(t => t.type === "bayar" && inY(t)), t => t.amount)) * 100) / 100;
+  const cardUnpaid = Math.round(sum(S.cards, c => cardCalc(S, c, today).balance) * 100) / 100;
+  return { income, expected, spent, pending, balance, projected: balance + expected - pending, byCat, months: months.size,
+    cash, cashOut: Math.round(cashOut * 100) / 100, cashProjected: Math.round((cash + expected - pending) * 100) / 100, cardUsed, cardPaid, cardUnpaid };
 }
 
 // Aliran sebulan, sama definisi dengan ringkasan: masuk = transaksi Masuk; keluar = transaksi Keluar
@@ -792,7 +802,9 @@ function planAuditImport(S, items, opt = {}) {
     if (/hibah|keuntungan bank/i.test(it.cat)) { const k = it.date.slice(0, 7) + "|" + it.acc + "|" + it.type; (hib[k] = hib[k] || []).push(it); continue; }
     const base = [it.date, it.acc, it.type, it.amount.toFixed(2), it.det].join("|");
     seen[base] = (seen[base] || 0) + 1;
-    out.push({ id: "aud-" + fnv(base + "#" + seen[base]), date: it.date, type: it.type, cat: it.cat, amount: it.amount, note: auditNote(it.det, it.acc) });
+    const t = { id: "aud-" + fnv(base + "#" + seen[base]), date: it.date, type: it.type, cat: it.cat, amount: it.amount, note: auditNote(it.det, it.acc) };
+    if (/kad kredit|credit card|mastercard|\bvisa\b/i.test(it.acc)) t.card = true;
+    out.push(t);
   }
   for (const [k, arr] of Object.entries(hib)) {
     const [m, acc, type] = k.split("|"), sumv = Math.round(arr.reduce((a, x) => a + x.amount, 0) * 100) / 100;
@@ -1498,7 +1510,8 @@ function vRingkasan() {
     <div class="grid3">
       <div class="stat"><span>Pendapatan diterima</span><b>${RM(ys.income)}</b>${ys.expected ? `<span>+ ${RM(ys.expected)} dijangka bulan ini (belum direkod)</span>` : ""}</div>
       <div class="stat"><span>Duit keluar</span><b class="${ys.spent ? "neg" : ""}">${RM(ys.spent)}</b>${ys.pending ? `<span>+ ${RM(ys.pending)} komitmen bulan ini belum bayar</span>` : ""}</div>
-      <div class="stat"><span>Baki</span><b class="${ys.balance >= 0 ? "pos" : "neg"}">${RM(ys.balance)}</b>${ys.expected || ys.pending ? `<span>Dijangka hujung bulan: ${RM(ys.projected)}</span>` : ""}</div>
+      <div class="stat"><span>Baki tunai</span><b class="${ys.cash >= 0 ? "pos" : "neg"}">${RM(ys.cash)}</b><span>${ys.expected || ys.pending ? `Dijangka hujung bulan: ${RM(ys.cashProjected)}` : "Belanja kad belum bayar tidak ditolak"}</span></div>
+      <div class="stat"><span>Guna kad kredit</span><b class="${ys.cardUsed ? "neg" : ""}">${RM(ys.cardUsed)}</b><span>${ys.cardUnpaid ? `Belum bayar sekarang ${RM(ys.cardUnpaid)}` : S.cards.length ? "Semua kad sudah dibayar" : "Tiada kad direkod"}</span></div>
     </div>
     ${Object.keys(ys.byCat).length ? `<h3 style="margin-top:14px">Duit keluar ikut kategori</h3>
     <ul class="list">${Object.entries(ys.byCat).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<li style="padding:6px 0"><div class="grow">${escW(n)}<div class="bar" style="margin-top:4px;height:6px"><i style="width:${(v / ys.spent * 100).toFixed(1)}%;background:var(--red)"></i></div></div><span class="num">${RM(v)}</span></li>`).join("")}</ul>` : `<p class="empty">Tiada duit keluar direkod${sumYear ? " untuk " + sumYear : ""}.</p>`}
