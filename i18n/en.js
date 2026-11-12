@@ -3,6 +3,11 @@
 // Nama kategori, nama kad & nota pengguna sengaja TIDAK diterjemah.
 window.I18N_EN = {
 exact: {
+    "{n} transaksi": "{n} transactions",
+    "Tunai": "Cash",
+    "{n} {m} {n} · bayar bil kad (ditolak dari tunai)": "{n} {m} {n} · card bill payment (deducted from cash)",
+    "Belanja kad": "Card spending",
+    "Semua": "All",
 "Pilih bulan": "Choose month",
 "Bulan kewangan bermula hari": "Financial month starts on day",
 "1 (bulan kalendar)": "1 (calendar month)",

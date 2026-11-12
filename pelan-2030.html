@@ -1074,7 +1074,7 @@ const today = () => new Date();
 
 let S = load();
 let tab = (() => { try { return localStorage.getItem(KEY + ":tab") || "ringkasan"; } catch { return "ringkasan"; } })();
-let txMonth = pkNow(S, today());
+let txMonth = pkNow(S, today()), txPay = "";
 let trendSel = "6";
 let sumYear = new Date().getFullYear(), sumMonth = "";
 
@@ -1785,10 +1785,13 @@ function vKewangan() {
   const inSel = x => !txMonth || pk(S, x.date) === txMonth;
   const alloc = Object.assign({}, ...S.cards.map(c => cardAlloc(S, c.id)));
   const cardRows = S.cardTx.filter(x => x.type === "belanja" && inSel(x)).map(x => ({ ...x, _card: true }));
-  const rows = [...S.tx.filter(inSel), ...cardRows].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const byCard = r => r._card || isCardTx(r);
+  const allRows = [...S.tx.filter(inSel), ...cardRows];
+  const rows = allRows.filter(r => !txPay || (txPay === "kad") === byCard(r)).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const payCount = k => allRows.filter(r => !k || (k === "kad") === byCard(r)).length;
   const isBill = r => !r._card && r.type === "out" && r.cat === "Kad kredit";
   const tin = sum(rows.filter(r => !r._card && r.type === "in"), r => r.amount);
-  const tout = sum(rows.filter(r => r._card || (r.type === "out" && !isBill(r))), r => r.amount);
+  const tout = sum(rows.filter(r => r._card || (r.type === "out" && (txPay === "tunai" || !isBill(r)))), r => r.amount);
   const gs = savCalc(goldHave(S), S.gold.target, S.gold.by, t);
   const { s1, s2, stage } = emergencyCalc(S, t);
   const stLine = (sv, label) => sv.need ? `Perlu ${RM(sv.need)} lagi · ${isFinite(sv.perMonth) ? RM(sv.perMonth) + " sebulan" : "tarikh sasaran sudah lepas"}` : label + " tercapai ✓";
@@ -1816,12 +1819,14 @@ function vKewangan() {
 
   <section class="card">
     <div class="row between"><h2>Transaksi</h2>${monthSelect("txmonth", txMonth, [...S.tx, ...S.cardTx].map(t => t.date))}</div>
+    <div class="seg" style="grid-template-columns:1fr 1fr 1fr;margin:0 0 8px">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) => `<button type="button" data-act="txpay" data-v="${k}" aria-pressed="${txPay === k}" style="line-height:1.15;padding:4px 2px;white-space:nowrap">${l}<span class="small" style="display:block;font-weight:400">${payCount(k)} transaksi</span></button>`).join("")}</div>
     ${txMonth ? "" : `<p class="small muted" style="margin:0 0 6px">Semua bulan · ${rows.length} transaksi</p>`}
-    <div class="grid3">${stat("Masuk", RM(tin), "pos")}${stat("Keluar", RM(tout), "neg")}${stat("Bersih", RM(tin - tout), tin - tout >= 0 ? "pos" : "neg")}</div>
+    ${txPay === "kad" ? `<div class="grid2">${stat("Belanja kad", RM(tout), "neg")}${stat("Belum bayar", RM(sum(rows.filter(r => r._card), r => { const a = alloc[r.id]; return a ? a.owed || 0 : 0; })), "neg")}</div>`
+      : `<div class="grid3">${stat("Masuk", RM(tin), "pos")}${stat("Keluar", RM(tout), "neg")}${stat(txPay ? "Baki tunai" : "Bersih", RM(tin - tout), tin - tout >= 0 ? "pos" : "neg")}</div>`}
     ${rows.length ? `<ul class="list" style="margin-top:8px">${withMonthHeads(rows, !txMonth, r => r._card
       ? `<li><div class="grow"><div>${esc(r.cat)}${r.note ? ` <span class="muted small">· ${esc(r.note)}</span>` : ""}</div><div class="small muted">${fmtD(r.date)} · 💳 ${esc(cardName(r.cardId))}</div><div style="margin-top:4px">${payPill(alloc[r.id])}</div></div>
       <span class="num neg">−${RM(r.amount)}</span>${del("cardTx", r.id)}</li>`
-      : `<li><div class="grow"><div>${esc(r.cat)}${r.note ? ` <span class="muted small">· ${esc(r.note)}</span>` : ""}</div><div class="small muted">${fmtD(r.date)}${isBill(r) ? " · bayar bil kad (tidak dikira dalam Keluar)" : ""}</div></div>
+      : `<li><div class="grow"><div>${esc(r.cat)}${r.note ? ` <span class="muted small">· ${esc(r.note)}</span>` : ""}</div><div class="small muted">${fmtD(r.date)}${isBill(r) ? (txPay === "tunai" ? " · bayar bil kad (ditolak dari tunai)" : " · bayar bil kad (tidak dikira dalam Keluar)") : ""}</div></div>
       <span class="num ${r.type === "in" ? "pos" : isBill(r) ? "muted" : "neg"}">${r.type === "in" ? "+" : "−"}${RM(r.amount)}</span>${del("tx", r.id)}</li>`)}</ul>` : `<p class="empty">${txMonth ? "Tiada transaksi untuk " + fmtYM(txMonth) : "Belum ada transaksi"}.</p>`}
     <form class="add" data-form="tx">
       <label>Tarikh<input name="date" type="date" value="${ymd(t)}" required></label>
@@ -2623,6 +2628,7 @@ document.addEventListener("click", e => {
       toastUndo(`${P.tx.length} transaksi audit diimport`, () => { S.tx = S.tx.filter(t => !ids.has(t.id)); commit(); toast("Import dibatalkan"); });
       break;
     }
+    case "txpay": txPay = b.dataset.v; render(); break;
     case "lang": setLang(b.dataset.v || (LANG === "en" ? "ms" : "en")); break;
     case "theme": setTheme(b.dataset.v || (curTheme() === "dark" ? "light" : "dark")); break;
     case "emailtok": makeEmailToken(); break;
