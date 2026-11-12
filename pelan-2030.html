@@ -456,7 +456,10 @@ function yearSummary(S, year, today, month) {
   const cardUsed = Math.round((sum(cardSpend, t => t.amount) + sum(S.tx.filter(t => t.type === "out" && inY(t) && isCardTx(t)), t => t.amount)) * 100) / 100;
   const cardPaid = Math.round((sum(S.cardTx.filter(t => t.type === "bayar" && inY(t)), t => t.amount)) * 100) / 100;
   const cardUnpaid = Math.round(sum(S.cards, c => cardCalc(S, c, today).balance) * 100) / 100;
-  return { income, expected, spent, pending, balance, projected: balance + expected - pending, byCat, months: months.size,
+  const catOf = (rows) => { const o = {}; for (const t of rows) { const c = String(t.cat || "Lain-lain").trim() || "Lain-lain"; o[c] = (o[c] || 0) + (Number(t.amount) || 0); } return o; };
+  const byCatCash = catOf(S.tx.filter(t => t.type === "out" && inY(t) && !isCardTx(t)));
+  const byCatCard = catOf([...cardSpend, ...S.tx.filter(t => t.type === "out" && inY(t) && isCardTx(t))]);
+  return { byCatCash, byCatCard, income, expected, spent, pending, balance, projected: balance + expected - pending, byCat, months: months.size,
     cash, cashOut: Math.round(cashOut * 100) / 100, cashProjected: Math.round((cash + expected - pending) * 100) / 100, cardUsed, cardPaid, cardUnpaid };
 }
 
@@ -1076,7 +1079,7 @@ let S = load();
 let tab = (() => { try { return localStorage.getItem(KEY + ":tab") || "ringkasan"; } catch { return "ringkasan"; } })();
 let txMonth = pkNow(S, today()), txPay = "";
 let trendSel = "6";
-let sumYear = new Date().getFullYear(), sumMonth = "";
+let sumYear = new Date().getFullYear(), sumMonth = "", sumPay = "";
 
 function load() {
   try { return normalize(JSON.parse(localStorage.getItem(KEY))); } catch { return normalize(null); }
@@ -1536,14 +1539,24 @@ function vRingkasan() {
     </div>
     ${rngTxt ? `<div class="small muted" style="margin:0 0 4px">${rngTxt}</div>` : ""}
     <div class="row between small muted" style="margin:0 0 8px"><span>${sumMonth ? "" : ys.months + " bulan direkod"}</span>${dsrPill(c)}</div>
-    <div class="grid3">
+    <div class="seg" style="grid-template-columns:1fr 1fr 1fr;margin:0 0 10px">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) => `<button type="button" data-act="sumpay" data-v="${k}" aria-pressed="${sumPay === k}" style="padding:4px 2px;white-space:nowrap">${l}</button>`).join("")}</div>
+    ${sumPay === "tunai" ? `<div class="grid3">
+      <div class="stat"><span>Pendapatan diterima</span><b>${RM(ys.income)}</b>${ys.expected ? `<span>+ ${RM(ys.expected)} dijangka bulan ini (belum direkod)</span>` : ""}</div>
+      <div class="stat"><span>Keluar tunai</span><b class="${ys.cashOut ? "neg" : ""}">${RM(ys.cashOut)}</b><span>${ys.pending ? `+ ${RM(ys.pending)} komitmen bulan ini belum bayar` : "Termasuk bayaran bil kad"}</span></div>
+      <div class="stat"><span>Baki tunai</span><b class="${ys.cash >= 0 ? "pos" : "neg"}">${RM(ys.cash)}</b><span>${ys.expected || ys.pending ? `Dijangka hujung bulan: ${RM(ys.cashProjected)}` : "Belanja kad belum bayar tidak ditolak"}</span></div>
+    </div>` : sumPay === "kad" ? `<div class="grid3">
+      <div class="stat"><span>Guna kad kredit</span><b class="${ys.cardUsed ? "neg" : ""}">${RM(ys.cardUsed)}</b></div>
+      <div class="stat"><span>Bayaran kad</span><b class="${ys.cardPaid ? "pos" : ""}">${RM(ys.cardPaid)}</b></div>
+      <div class="stat"><span>Belum bayar sekarang</span><b class="${ys.cardUnpaid ? "neg" : "pos"}">${RM(ys.cardUnpaid)}</b><span>${ys.cardUnpaid ? "Baki semua kad" : S.cards.length ? "Semua kad sudah dibayar" : "Tiada kad direkod"}</span></div>
+    </div>` : `<div class="grid3">
       <div class="stat"><span>Pendapatan diterima</span><b>${RM(ys.income)}</b>${ys.expected ? `<span>+ ${RM(ys.expected)} dijangka bulan ini (belum direkod)</span>` : ""}</div>
       <div class="stat"><span>Duit keluar</span><b class="${ys.spent ? "neg" : ""}">${RM(ys.spent)}</b>${ys.pending ? `<span>+ ${RM(ys.pending)} komitmen bulan ini belum bayar</span>` : ""}</div>
       <div class="stat"><span>Baki tunai</span><b class="${ys.cash >= 0 ? "pos" : "neg"}">${RM(ys.cash)}</b><span>${ys.expected || ys.pending ? `Dijangka hujung bulan: ${RM(ys.cashProjected)}` : "Belanja kad belum bayar tidak ditolak"}</span></div>
       <div class="stat"><span>Guna kad kredit</span><b class="${ys.cardUsed ? "neg" : ""}">${RM(ys.cardUsed)}</b><span>${ys.cardUnpaid ? `Belum bayar sekarang ${RM(ys.cardUnpaid)}` : S.cards.length ? "Semua kad sudah dibayar" : "Tiada kad direkod"}</span></div>
-    </div>
-    ${Object.keys(ys.byCat).length ? `<h3 style="margin-top:14px">Duit keluar ikut kategori</h3>
-    <ul class="list">${Object.entries(ys.byCat).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<li style="padding:6px 0"><div class="grow">${escW(n)}<div class="bar" style="margin-top:4px;height:6px"><i style="width:${(v / ys.spent * 100).toFixed(1)}%;background:var(--red)"></i></div></div><span class="num">${RM(v)}</span></li>`).join("")}</ul>` : `<p class="empty">Tiada duit keluar direkod${sumYear ? " untuk " + sumYear : ""}.</p>`}
+    </div>`}
+    ${(() => { const bc = sumPay === "tunai" ? ys.byCatCash : sumPay === "kad" ? ys.byCatCard : ys.byCat, tot = sum(Object.values(bc), v => v) || 1;
+      return Object.keys(bc).length ? `<h3 style="margin-top:14px">${sumPay === "tunai" ? "Keluar tunai ikut kategori" : sumPay === "kad" ? "Belanja kad ikut kategori" : "Duit keluar ikut kategori"}</h3>
+    <ul class="list">${Object.entries(bc).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<li style="padding:6px 0"><div class="grow">${escW(n)}<div class="bar" style="margin-top:4px;height:6px"><i style="width:${(v / tot * 100).toFixed(1)}%;background:var(--red)"></i></div></div><span class="num">${RM(v)}</span></li>`).join("")}</ul>` : `<p class="empty">${sumPay === "kad" ? "Tiada belanja kad" : "Tiada duit keluar"} direkod${sumYear ? " untuk " + sumYear : ""}.</p>`; })()}
     <h3 style="margin-top:14px">Campuran pendapatan</h3>
     <div class="mix" aria-hidden="true">${["aktif", "sampingan", "pasif"].map(k => `<i style="width:${c.mix[k] / mixT * 100}%;background:${MIXC[k]}"></i>`).join("")}</div>
     <div class="row small" style="margin-top:6px">${["aktif", "sampingan", "pasif"].map(k => `<span><span style="color:${MIXC[k]}">■</span> ${k[0].toUpperCase() + k.slice(1)} ${RM(c.mix[k])}</span>`).join("")}</div>
@@ -2629,6 +2642,7 @@ document.addEventListener("click", e => {
       break;
     }
     case "txpay": txPay = b.dataset.v; render(); break;
+    case "sumpay": sumPay = b.dataset.v; render(); break;
     case "lang": setLang(b.dataset.v || (LANG === "en" ? "ms" : "en")); break;
     case "theme": setTheme(b.dataset.v || (curTheme() === "dark" ? "light" : "dark")); break;
     case "emailtok": makeEmailToken(); break;
