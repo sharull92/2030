@@ -519,14 +519,17 @@ function nextDue(dueDay, today) {
 }
 
 // Data laporan bulanan (m = "YYYY-MM"). Definisi sama dengan ringkasan: bayaran bil kad tidak dikira dalam Keluar.
-function monthReport(S, m, today) {
+// mode: "" semua, "tunai" (tx bukan belian kad; bil kad DIKIRA keluar), "kad" (belanja kad + bayaran kad).
+function monthReport(S, m, today, mode = "") {
   const inM = t => pk(S, t.date) === m;
   const cardNm = id => (S.cards.find(c => c.id === id) || { name: "(kad dipadam)" }).name;
-  const flow = monthFlow(S, m);
+  const flow = monthFlow(S, m, mode);
+  const txRows = S.tx.filter(t => inM(t) && (!mode || (mode === "kad" ? t.type === "out" && isCardTx(t) : !isCardTx(t))));
   const rows = [
-    ...S.tx.filter(inM).map(t => ({ date: t.date, cat: t.cat, note: t.note || "", type: t.type, amount: Number(t.amount) || 0,
-      via: t.type === "in" ? "" : t.cat === "Kad kredit" ? "Bayar bil kad" : "Tunai / debit", bill: t.type === "out" && t.cat === "Kad kredit" })),
-    ...S.cardTx.filter(t => t.type === "belanja" && inM(t)).map(t => ({ date: t.date, cat: t.cat, note: t.note || "", type: "out", amount: Number(t.amount) || 0, via: "Kad " + cardNm(t.cardId), bill: false }))
+    ...txRows.map(t => ({ date: t.date, cat: t.cat, note: t.note || "", type: t.type, amount: Number(t.amount) || 0,
+      via: t.type === "in" ? "" : t.cat === "Kad kredit" ? "Bayar bil kad" : isCardTx(t) ? "Kad kredit" : "Tunai / debit", bill: mode !== "tunai" && t.type === "out" && t.cat === "Kad kredit" })),
+    ...(mode === "tunai" ? [] : S.cardTx.filter(t => t.type === "belanja" && inM(t)).map(t => ({ date: t.date, cat: t.cat, note: t.note || "", type: "out", amount: Number(t.amount) || 0, via: "Kad " + cardNm(t.cardId), bill: false }))),
+    ...(mode === "kad" ? S.cardTx.filter(t => t.type === "bayar" && inM(t)).map(t => ({ date: t.date, cat: "Bayaran kad", note: t.note || "", type: "in", amount: Number(t.amount) || 0, via: "Kad " + cardNm(t.cardId), bill: false })) : [])
   ].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const byCatObj = {};
   for (const r of rows) if (r.type === "out" && !r.bill) { const c = String(r.cat || "Lain-lain").trim() || "Lain-lain"; byCatObj[c] = (byCatObj[c] || 0) + r.amount; }
@@ -539,7 +542,9 @@ function monthReport(S, m, today) {
     return { name: c.name, spend: sum(t.filter(x => x.type === "belanja"), x => x.amount), paid: sum(t.filter(x => x.type === "bayar"), x => x.amount), balance: k.balance, limit: k.limit, util: k.util };
   });
   const c = calc(S), e = emergencyCalc(S, today);
-  return { m, in: flow.in, out: flow.out, net: flow.in - flow.out, byCat, rows, commitments, debts, cards,
+  return { m, mode, in: flow.in, out: flow.out, net: flow.in - flow.out, byCat, rows, commitments, debts, cards: mode === "tunai" ? [] : cards,
+    cardUnpaid: Math.round(sum(S.cards, c => cardCalc(S, c, today).balance) * 100) / 100,
+    budgetMode: mode ? budgetStatus(S, m, mode) : null,
     committed: c.out, dsr: c.dsr, dsrLevel: c.dsrLevel,
     emergency: { asb: asbHave(S), asbTarget: Number(S.asb.s1) || 0, th: thHave(S), thTarget: Number(S.th.target) || 0, stage: e.stage },
     gold: { have: goldHave(S), target: Number(S.gold.target) || 0 },
@@ -1086,7 +1091,7 @@ const today = () => new Date();
 
 let S = load();
 let tab = (() => { try { return localStorage.getItem(KEY + ":tab") || "ringkasan"; } catch { return "ringkasan"; } })();
-let txMonth = pkNow(S, today()), txPay = "", budgetPay = "";
+let txMonth = pkNow(S, today()), txPay = "", budgetPay = "", reportPay = "";
 let trendSel = "6", trendPay = "";
 let sumYear = new Date().getFullYear(), sumMonth = "", sumPay = "";
 
@@ -1660,18 +1665,21 @@ function reportHTML(r) {
   const tbl = (head, body, foot = "") => `<table><thead><tr>${head.map(h => `<th class="${h.endsWith("(RM)") || h === "%" ? "r" : ""}">${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody>${foot}</table>`;
   const ok = b => b ? `<span class="ok">Sudah bayar</span>` : `<span class="bad">Belum bayar</span>`;
   return `<div class="rp">
-  <header><div><h1>Laporan kewangan bulanan</h1><div class="sub">${fmtYM(r.m)}${S.settings.name ? " · " + esc(S.settings.name) : ""}</div></div><div class="brand">Pelan 2030</div></header>
-  <div class="kpi">
+  <header><div><h1>Laporan kewangan bulanan</h1><div class="sub">${fmtYM(r.m)}${r.mode === "tunai" ? " · Tunai sahaja" : r.mode === "kad" ? " · Kad kredit sahaja" : ""}${S.settings.name ? " · " + esc(S.settings.name) : ""}</div></div><div class="brand">Pelan 2030</div></header>
+  <div class="kpi">${r.mode === "kad" ? `
+    <div><span>Belanja kad</span><b class="neg">${R(r.out)}</b></div>
+    <div><span>Bayaran kad</span><b class="pos">${R(r.in)}</b></div>
+    <div><span>Belum bayar sekarang</span><b class="${r.cardUnpaid > 0 ? "neg" : "pos"}">${R(r.cardUnpaid)}</b></div>` : `
     <div><span>Masuk</span><b class="pos">${R(r.in)}</b></div>
-    <div><span>Keluar</span><b class="neg">${R(r.out)}</b></div>
-    <div><span>Bersih</span><b class="${r.net >= 0 ? "pos" : "neg"}">${R(r.net)}</b></div>
+    <div><span>${r.mode === "tunai" ? "Keluar tunai" : "Keluar"}</span><b class="neg">${R(r.out)}</b></div>
+    <div><span>${r.mode === "tunai" ? "Baki tunai" : "Bersih"}</span><b class="${r.net >= 0 ? "pos" : "neg"}">${R(r.net)}</b></div>`}
     <div><span>DSR</span><b>${isFinite(r.dsr) ? r.dsr.toFixed(0) + "%" : "—"}</b><small>${r.dsrLevel}</small></div>
   </div>
-  <h2>Duit keluar ikut kategori</h2>
+  <h2>${r.mode === "tunai" ? "Keluar tunai ikut kategori" : r.mode === "kad" ? "Belanja kad ikut kategori" : "Duit keluar ikut kategori"}</h2>
   ${r.byCat.length ? tbl(["Kategori", "%", "Jumlah (RM)"], r.byCat.map(c => `<tr><td>${esc(c.cat)}<div class="bar"><i style="width:${c.pct.toFixed(1)}%"></i></div></td><td class="r">${c.pct.toFixed(0)}%</td><td class="r">${R(c.amount)}</td></tr>`).join(""), `<tfoot><tr><td>Jumlah</td><td></td><td class="r">${R(r.out)}</td></tr></tfoot>`) : `<p class="muted">Tiada duit keluar.</p>`}
-  ${r.budget && r.budget.rows.length ? `<h2>Bajet vs belanja</h2>${tbl(["Kategori", "Bajet (RM)", "Belanja (RM)", "Baki (RM)", "%"], r.budget.rows.map(b => `<tr><td>${esc(b.cat)}</td><td class="r">${R(b.amount)}</td><td class="r">${R(b.spent)}</td><td class="r ${b.left < 0 ? "neg" : "pos"}">${R(b.left)}</td><td class="r">${isFinite(b.pct) ? b.pct.toFixed(0) + "%" : "—"}</td></tr>`).join(""), `<tfoot><tr><td>Jumlah</td><td class="r">${R(r.budget.budget)}</td><td class="r">${R(r.budget.spent)}</td><td class="r">${R(r.budget.budget - r.budget.spent)}</td><td class="r">${r.budget.pct.toFixed(0)}%</td></tr></tfoot>`)}${r.budget.unbudgetedTotal ? `<p class="note">Belanja tanpa bajet: ${R(r.budget.unbudgetedTotal)}</p>` : ""}` : ""}
+  ${r.budget && r.budget.rows.length ? `<h2>Bajet vs belanja</h2>${tbl(["Kategori", "Bajet (RM)", ...(r.mode ? [r.mode === "kad" ? "Kad (RM)" : "Tunai (RM)"] : []), "Belanja (RM)", "Baki (RM)", "%"], r.budget.rows.map(b => `<tr><td>${esc(b.cat)}</td><td class="r">${R(b.amount)}</td>${r.mode ? `<td class="r">${R((r.budgetMode.rows.find(x => x.id === b.id) || {}).spent)}</td>` : ""}<td class="r">${R(b.spent)}</td><td class="r ${b.left < 0 ? "neg" : "pos"}">${R(b.left)}</td><td class="r">${isFinite(b.pct) ? b.pct.toFixed(0) + "%" : "—"}</td></tr>`).join(""), `<tfoot><tr><td>Jumlah</td><td class="r">${R(r.budget.budget)}</td>${r.mode ? `<td class="r">${R(r.budgetMode.spent)}</td>` : ""}<td class="r">${R(r.budget.spent)}</td><td class="r">${R(r.budget.budget - r.budget.spent)}</td><td class="r">${r.budget.pct.toFixed(0)}%</td></tr></tfoot>`)}${r.budget.unbudgetedTotal ? `<p class="note">Belanja tanpa bajet: ${R(r.budget.unbudgetedTotal)}</p>` : ""}${r.mode ? `<p class="note">Belanja & Baki = semua cara bayar; lajur ${r.mode === "kad" ? "Kad" : "Tunai"} = bahagian ${r.mode === "kad" ? "kad kredit" : "tunai"} sahaja.</p>` : ""}` : ""}
   <h2>Senarai transaksi (${r.rows.length})</h2>
-  ${r.rows.length ? tbl(["Tarikh", "Kategori", "Nota", "Cara bayar", "Jumlah (RM)"], r.rows.map(x => `<tr class="${x.bill ? "muted" : ""}"><td>${fmtD(x.date)}</td><td>${esc(x.cat)}</td><td>${esc(x.note)}</td><td>${esc(x.via)}</td><td class="r ${x.type === "in" ? "pos" : x.bill ? "" : "neg"}">${x.type === "in" ? "+" : "−"}${R(x.amount)}</td></tr>`).join("")) + (r.rows.some(x => x.bill) ? `<p class="note">Baris kelabu = bayaran bil kad kredit; tidak dikira dalam Keluar kerana belanja kad sudah dikira.</p>` : "") : `<p class="muted">Tiada transaksi.</p>`}
+  ${r.rows.length ? tbl(["Tarikh", "Kategori", "Nota", "Cara bayar", "Jumlah (RM)"], r.rows.map(x => `<tr class="${x.bill ? "muted" : ""}"><td>${fmtD(x.date)}</td><td>${esc(x.cat)}</td><td>${esc(x.note)}</td><td>${esc(x.via)}</td><td class="r ${x.type === "in" ? "pos" : x.bill ? "" : "neg"}">${x.type === "in" ? "+" : "−"}${R(x.amount)}</td></tr>`).join("")) + (r.mode === "tunai" && r.rows.some(x => x.cat === "Kad kredit" && x.type === "out") ? `<p class="note">Bayaran bil kad kredit ditolak dari tunai.</p>` : "") + (r.rows.some(x => x.bill) ? `<p class="note">Baris kelabu = bayaran bil kad kredit; tidak dikira dalam Keluar kerana belanja kad sudah dikira.</p>` : "") : `<p class="muted">Tiada transaksi.</p>`}
   ${r.cards.length ? `<h2>Kad kredit</h2>${tbl(["Kad", "Belanja bulan ini (RM)", "Dibayar bulan ini (RM)", "Baki semasa (RM)", "%"], r.cards.map(c => `<tr><td>${esc(c.name)}</td><td class="r">${R(c.spend)}</td><td class="r">${R(c.paid)}</td><td class="r ${c.balance > 0 ? "neg" : "pos"}">${R(c.balance)}</td><td class="r">${c.util.toFixed(0)}%</td></tr>`).join(""))}<p class="note">% = penggunaan had kredit.</p>` : ""}
   ${r.commitments.length || r.debts.length ? `<h2>Komitmen & hutang (${R(r.committed)} sebulan)</h2>${tbl(["Perkara", "Hari bayar", "Status", "Jumlah (RM)"],
       r.commitments.map(c => `<tr><td>${esc(c.name)}</td><td>${c.day || "—"}</td><td>${ok(c.paid)}</td><td class="r">${R(c.amount)}</td></tr>`).join("")
@@ -1687,12 +1695,12 @@ function reportHTML(r) {
   </div>`;
 }
 function exportPDF() {
-  const r = monthReport(S, reportMonth, today());
+  const r = monthReport(S, reportMonth, today(), reportPay);
   let el = document.getElementById("printArea");
   if (!el) { el = document.createElement("div"); el.id = "printArea"; document.body.appendChild(el); }
   el.innerHTML = reportHTML(r);
   const oldTitle = document.title;
-  document.title = (LANG === "en" ? "Financial-report-" : "Laporan-kewangan-") + reportMonth; // nama fail PDF lalai
+  document.title = (LANG === "en" ? "Financial-report-" : "Laporan-kewangan-") + reportMonth + (reportPay === "tunai" ? (LANG === "en" ? "-cash" : "-tunai") : reportPay === "kad" ? (LANG === "en" ? "-card" : "-kad") : ""); // nama fail PDF lalai
   const done = () => { document.title = oldTitle; window.removeEventListener("afterprint", done); };
   window.addEventListener("afterprint", done);
   setTimeout(() => { window.print(); setTimeout(done, 1500); }, 50);
@@ -1827,6 +1835,8 @@ function vKewangan() {
   <section class="card">
     <h2>Laporan & eksport</h2>
     <p class="small muted"><b>PDF</b>: laporan sebulan (dalam dialog cetak pilih <b>Simpan sebagai PDF</b>). <b>Excel</b>: fail .xlsx dengan helaian Ringkasan, Transaksi, Kad kredit, Simpanan dan Komitmen & hutang.</p>
+    <div class="small muted" style="margin:0 0 4px">Laporan PDF untuk:</div>
+    <div class="seg" style="grid-template-columns:1fr 1fr 1fr;margin:0 0 8px">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) => `<button type="button" data-act="reportpay" data-v="${k}" aria-pressed="${reportPay === k}" style="padding:4px 2px;white-space:nowrap">${l}</button>`).join("")}</div>
     <div class="row">${monthSelect("reportmonth", reportMonth, [...S.tx, ...S.cardTx].map(t => t.date)).replace('<option value="" selected>Semua bulan</option>', "").replace('<option value="" >Semua bulan</option>', "")}<button class="primary" data-act="pdf">Eksport PDF</button><button data-act="xlsx">Eksport Excel</button></div>
     <button class="ghost sm" data-act="xlsxall" style="margin-top:6px">Excel semua data</button>
   </section>
@@ -2659,6 +2669,7 @@ document.addEventListener("click", e => {
     case "sumpay": sumPay = b.dataset.v; render(); break;
     case "trendpay": trendPay = b.dataset.v; render(); break;
     case "budgetpay": budgetPay = b.dataset.v; render(); break;
+    case "reportpay": reportPay = b.dataset.v; render(); break;
     case "lang": setLang(b.dataset.v || (LANG === "en" ? "ms" : "en")); break;
     case "theme": setTheme(b.dataset.v || (curTheme() === "dark" ? "light" : "dark")); break;
     case "emailtok": makeEmailToken(); break;

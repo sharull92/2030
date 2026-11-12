@@ -3,6 +3,14 @@
 // Nama kategori, nama kad & nota pengguna sengaja TIDAK diterjemah.
 window.I18N_EN = {
 exact: {
+    "Belanja & Baki = semua cara bayar; lajur Tunai = bahagian tunai sahaja.": "Spent & Left = all payment methods; Cash column = cash part only.",
+    "Belanja & Baki = semua cara bayar; lajur Kad = bahagian kad kredit sahaja.": "Spent & Left = all payment methods; Card column = credit card part only.",
+    "Bayaran bil kad kredit ditolak dari tunai.": "Credit card bill payments are deducted from cash.",
+    "Tunai (RM)": "Cash (RM)",
+    "Kad (RM)": "Card (RM)",
+    "{m} {n} · Kad kredit sahaja": "{m} {n} · Credit card only",
+    "{m} {n} · Tunai sahaja": "{m} {n} · Cash only",
+    "Laporan PDF untuk:": "PDF report for:",
     "Belanja kad kredit tanpa bajet:": "Credit card spending without a budget:",
     "Belanja tunai tanpa bajet:": "Cash spending without a budget:",
     "Kad RM {n} · jumlah RM {n} / RM {n} · —": "Card RM {n} · total RM {n} / RM {n} · —",
