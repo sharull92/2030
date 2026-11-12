@@ -139,6 +139,19 @@ svg.chart text{fill:var(--muted);font-size:11px;font-family:inherit}
 .lagi button span{flex:1;min-width:0}
 .lagi button span[aria-hidden]{flex:none;font-size:24px;color:var(--muted)}
 .lagi button small{display:block;font-weight:400;font-size:14px;color:var(--muted)}
+/* Rekod pantas: skrin penuh, semua medan kelihatan, butang sentiasa di bawah */
+#sheet{align-items:stretch;background:var(--surface)}
+#sheet .panel{max-width:560px;height:100%;height:100dvh;max-height:none;border-radius:0;display:flex;flex-direction:column;overflow:hidden;
+  padding:calc(10px + env(safe-area-inset-top)) 20px calc(14px + env(safe-area-inset-bottom))}
+#sheet .grab{display:none}
+#sheet .qhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+#sheet .qhead h2{margin:0}
+#sheet .qhead button{width:40px;height:40px;border-radius:50%;padding:0;font-size:18px}
+#quickForm{display:flex;flex-direction:column;flex:1;min-height:0}
+#quickForm .qbody{flex:1;min-height:0;overflow-y:auto;margin:0 -20px;padding:0 20px}
+#quickForm .qfoot{padding-top:12px}
+#sheet .chips{flex-wrap:wrap;overflow:visible;margin:6px 0 10px;padding:0}
+#sheet .amt{margin:8px 0 10px}
 @media print{#fab,#sheet{display:none!important}}
 @media print{
   @page{size:A4;margin:14mm 12mm}
@@ -2183,8 +2196,9 @@ function renderQuick() {
   const cats = quickCats(Q.type);
   sh.innerHTML = `<div class="panel" role="dialog" aria-modal="true" aria-label="Rekod transaksi">
     <div class="grab"></div>
+    <div class="qhead"><h2>Rekod transaksi</h2><button type="button" data-q="close" aria-label="Tutup">✕</button></div>
     <div class="seg"><button type="button" data-q="type" data-v="out" aria-pressed="${Q.type === "out"}">Duit keluar</button><button type="button" class="in" data-q="type" data-v="in" aria-pressed="${Q.type === "in"}">Duit masuk</button></div>
-    <form id="quickForm">
+    <form id="quickForm"><div class="qbody">
       <input class="amt" name="qamt" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="RM 0.00" required value="${esc(amtVal)}" aria-label="Jumlah (RM)">
       <div class="small muted">Kategori</div>
       <div class="chips">${cats.map(c => `<button type="button" data-q="cat" data-v="${esc(c)}" aria-pressed="${!!Q.cat && catKey(c) === catKey(Q.cat)}">${esc(c)}</button>`).join("")}</div>
@@ -2195,7 +2209,8 @@ function renderQuick() {
         <label>Nota<input name="qnote" value="${esc(noteVal)}" placeholder="pilihan"></label>
         <label>Tarikh<input name="qdate" type="date" value="${Q.date}" required></label>
       </div>
-      <div class="row" style="margin-top:14px"><button type="button" data-q="close" style="flex:1">Batal</button><button class="primary" style="flex:2">Simpan</button></div>
+      </div>
+      <div class="row qfoot"><button type="button" data-q="close" style="flex:1">Batal</button><button class="primary" style="flex:2">Simpan</button></div>
     </form>
   </div>`;
   sh.hidden = false;

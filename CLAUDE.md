@@ -68,7 +68,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - Jadi: cukup push ke branch ini; jangan ubah `config.js` dengan kunci sebenar di sini.
 
 ## Guna di telefon
-- Butang terapung ＋ (`#fab`) di semua tab → bottom sheet `#sheet` (`openQuick`/`renderQuick`, keadaan `Q`): Keluar/Masuk, jumlah (papan kekunci nombor, fokus automatik), cip kategori (`quickCats`: bajet + paling kerap 90 hari + lalai), cara bayar (Tunai/kad), nota, tarikh. Simpan guna `recordTx()` — fungsi yang sama dengan borang Kewangan.
+- Butang terapung ＋ (`#fab`) di semua tab → panel SKRIN PENUH `#sheet` (tajuk + ✕, `.qbody` boleh skrol jika skrin kecil, `.qfoot` Batal/Simpan sentiasa di bawah, cip kategori berbilang baris) (`openQuick`/`renderQuick`, keadaan `Q`): Keluar/Masuk, jumlah (papan kekunci nombor, fokus automatik), cip kategori (`quickCats`: bajet + paling kerap 90 hari + lalai), cara bayar (Tunai/kad), nota, tarikh. Simpan guna `recordTx()` — fungsi yang sama dengan borang Kewangan.
 - Pintasan manifest (tekan lama ikon app): `?tambah=keluar` / `?tambah=masuk` buka sheet terus.
 
 ## Auto catat duit masuk dari e-mel

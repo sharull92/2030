@@ -3,6 +3,10 @@
 // Nama kategori, nama kad & nota pengguna sengaja TIDAK diterjemah.
 window.I18N_EN = {
 exact: {
+"Rekod transaksi": "Record transaction",
+"Tutup": "Close",
+"Disegerak {n}:{n} PG": "Synced {n}:{n} am",
+"Disegerak {n}:{n} PTG": "Synced {n}:{n} pm",
 "1 bulan direkod": "1 month recorded",
 "1 belanja · tarikh akhir {n} {m} {n} ({n} hari lagi)": "1 purchase · due {n} {m} {n} ({n} days left)",
 "Simpanan": "Savings",
@@ -536,6 +540,9 @@ exact: {
 "Tambah pendapatan": "Add income"
 },
 phrases: [
+["Disegerak ", "Synced "],
+[" PTG", " pm"],
+[" PG", " am"],
 [" sebulan", " a month"],
 ["Dijana ", "Generated "],
 [" · bayar ", " · due day "],
