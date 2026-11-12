@@ -630,6 +630,23 @@ function applyPlan(S, now, mkId) {
 }
 const planApplied = S => S.goals.some(g => g.tpl);
 // Kemajuan sasaran 2030 daripada data app.
+// Minimum sebulan untuk capai sasaran 2030 menjelang Dis 2030 (bulan semasa dikira).
+function planMinimum(S, today) {
+  const M = planMetrics(S), y = today.getFullYear();
+  const months = Math.max(1, (2030 - y) * 12 + (12 - (today.getMonth() + 1)) + 1);
+  const years = Math.max(1, 2030 - y);
+  const r2 = n => Math.round(n * 100) / 100, r3 = n => Math.round(n * 1000) / 1000;
+  const g = r3(Math.max(0, M.emas.target - M.emas.have) / months);
+  const price = Number(S.gold.price) || 0;
+  return {
+    months,
+    simpanan: r2(Math.max(0, M.simpanan.target - M.simpanan.have) / months),
+    emas: g, emasRM: price ? r2(g * price) : null,
+    gajiPct: M.gaji.have > 0 && M.gaji.have < M.gaji.target ? Math.round((Math.pow(M.gaji.target / M.gaji.have, 1 / years) - 1) * 1000) / 10 : 0,
+    gajiYears: years,
+    pasif: r2(Math.max(0, M.pasif.target - M.pasif.have) / months)
+  };
+}
 function planMetrics(S) {
   const inc = t => sum(S.incomes.filter(i => i.type === t), i => i.amount);
   return {
@@ -1773,8 +1790,7 @@ function vPelan() {
   const yearPct = y => { const gs = S.goals.filter(g => +g.year === y); return gs.length ? gs.filter(g => g.done).length / gs.length * 100 : 0; };
   const curM = ym(t), ms = monthlySaving(S, curM);
   const started = curM >= PLAN_START;
-  const left = Math.max(1, (2030 - cy) * 12 + (12 - (t.getMonth() + 1)) + 1);
-  const needRM = Math.max(0, (M.simpanan.target - M.simpanan.have) / left), needG = Math.max(0, (M.emas.target - M.emas.have) / left);
+  const MIN = planMinimum(S, t), left = MIN.months, needRM = MIN.simpanan, needG = MIN.emas;
   const rv = nextReview(S, t);
   const showOld = !planApplied(S);
   return `
@@ -1801,9 +1817,14 @@ function vPelan() {
 
   <section class="card">
     <h2>Sasaran 2030</h2>
-    ${[["Pendapatan pasif", M.pasif, "sebulan", ""], ["Gaji", M.gaji, "sebulan", ""], ["Simpanan kecemasan", M.simpanan, "", ""], ["Simpanan emas", M.emas, "", "g"]].map(([l, m, per, u]) => {
+    ${[["Pendapatan pasif", M.pasif, "sebulan", "", M.pasif.have >= M.pasif.target ? "" : `Tambah ±<b>${RM(MIN.pasif)}</b> pendapatan pasif setiap bulan · hujung 2029: RM1,000–2,000`],
+       ["Gaji", M.gaji, "sebulan", "", MIN.gajiPct ? `Perlu naik ±<b>${MIN.gajiPct}% setahun</b> (${MIN.gajiYears} tahun lagi)` : ""],
+       ["Simpanan kecemasan", M.simpanan, "", "", MIN.simpanan ? `Minimum <b>${RM(MIN.simpanan)} sebulan</b> · pelan RM625` : ""],
+       ["Simpanan emas", M.emas, "", "g", MIN.emas ? `Minimum <b>${fmtG(MIN.emas)} sebulan</b>${MIN.emasRM != null ? ` ≈ ${RM(MIN.emasRM)}` : ""} · pelan 0.6–0.7 g` : ""]].map(([l, m, per, u, mn]) => {
       const pct = m.target ? Math.min(100, m.have / m.target * 100) : 0;
-      return `<div style="margin-top:10px"><div class="row between small"><span>${l}</span><span>${u ? fmtG(m.have) + " / " + fmtG(m.target) : RM(m.have) + " / " + RM(m.target)}${per ? " " + per : ""} · ${pct.toFixed(0)}%</span></div>${bar(pct, u ? "gold" : "")}</div>`; }).join("")}
+      return `<div style="margin-top:12px"><div class="row between small"><span>${l}</span><span>${u ? fmtG(m.have) + " / " + fmtG(m.target) : RM(m.have) + " / " + RM(m.target)}${per ? " " + per : ""} · ${pct.toFixed(0)}%</span></div>${bar(pct, u ? "gold" : "")}
+        <div class="small ${pct >= 100 ? "pos" : "muted"}" style="margin-top:4px">${pct >= 100 ? "Tercapai ✓" : mn}</div></div>`; }).join("")}
+    <p class="small muted" style="margin-top:10px">Minimum dikira untuk ${MIN.months} bulan lagi hingga Dis 2030 dan dikemas kini setiap kali anda rekod simpanan.${MIN.emasRM == null ? " Isi <b>Harga semasa RM/gram</b> (Kewangan → Sasaran emas) untuk nilai emas dalam RM." : ""}</p>
     <p class="small muted" style="margin-top:10px">Hujung 2029: pendapatan pasif RM1,000–RM2,000 sebulan (${RM(M.pasif.have)} sekarang). Pasif & gaji diambil dari <b>Sumber pendapatan</b> (jenis pasif / aktif).</p>
   </section>
 

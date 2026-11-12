@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../pelan-2030.html", import.meta.url), "utf8");
 const src = html.split("// @logic-start")[1].split("// @logic-end")[0];
-const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets, budgetStatus, catKey, applyPlan, planApplied, planMetrics, monthlySaving, nextReview, PLAN_TPL };")();
+const L = new Function(src.replace(/^.*\n/, "") + "\nreturn { normalize, calc, monthsToPay, upcoming, savCalc, trend, cardCalc, buildICS, emergencyCalc, merge3, mergePlan, stable, sameData, monthOut, yearSummary, monthFlow, trendMonths, trashItem, trashStep, restoreItem, findLost, purgeTrash, cardAlloc, nextDue, monthReport, depTotal, goldHave, asbHave, thHave, excelSheets, budgetStatus, catKey, applyPlan, planApplied, planMetrics, monthlySaving, nextReview, PLAN_TPL, planMinimum };")();
 
 test("monthsToPay", () => {
   assert.equal(L.monthsToPay(0, 10, 100), 0);
@@ -516,4 +516,19 @@ test("Pelan Tindakan: metrik sasaran, simpanan bulanan & semakan Jun/Dis", () =>
   assert.deepEqual(L.nextReview(S, new Date(2027, 2, 1)), { ym: "2027-06", due: false });
   assert.deepEqual(L.nextReview(S, new Date(2027, 5, 1)), { ym: "2027-06", due: true });
   assert.deepEqual(L.nextReview(S, new Date(2027, 7, 1)), { ym: "2027-12", due: false });
+});
+
+test("planMinimum: minimum sebulan hingga Dis 2030 (data pengguna 12 Nov 2026)", () => {
+  const S = L.normalize({ settings: { targetPassive: 5000, targetSalary: 6000 }, incomes: [{ type: "aktif", amount: 4781.75 }],
+    asb: { have: 12000, s1: 15000 }, th: { have: 0, target: 15000 }, gold: { have: 14.312, target: 30, price: 450 } });
+  const m = L.planMinimum(S, new Date(2026, 10, 12));
+  assert.equal(m.months, 50);
+  assert.equal(m.simpanan, 360);
+  assert.equal(m.emas, 0.314);
+  assert.equal(m.emasRM, 141.3);
+  assert.equal(m.gajiPct, 5.8);
+  assert.equal(m.pasif, 100);
+  const d = L.planMinimum(S, new Date(2030, 11, 5));
+  assert.equal(d.months, 1); assert.equal(d.simpanan, 18000);
+  S.gold.price = 0; assert.equal(L.planMinimum(S, new Date(2026, 10, 12)).emasRM, null);
 });
