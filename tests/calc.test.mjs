@@ -531,4 +531,8 @@ test("planMinimum: minimum sebulan hingga Dis 2030 (data pengguna 12 Nov 2026)",
   const d = L.planMinimum(S, new Date(2030, 11, 5));
   assert.equal(d.months, 1); assert.equal(d.simpanan, 18000);
   S.gold.price = 0; assert.equal(L.planMinimum(S, new Date(2026, 10, 12)).emasRM, null);
+  // simpanan bulan ini tidak mengubah minimum bulan ini
+  S.deposits.push({ kind: "asb", dir: "in", date: "2026-11-05", amount: 200 }, { kind: "emas", dir: "in", date: "2026-11-06", grams: 0.1 });
+  const m2 = L.planMinimum(S, new Date(2026, 10, 12));
+  assert.equal(m2.simpanan, 360); assert.equal(m2.emas, 0.314);
 });

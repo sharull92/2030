@@ -636,11 +636,13 @@ function planMinimum(S, today) {
   const months = Math.max(1, (2030 - y) * 12 + (12 - (today.getMonth() + 1)) + 1);
   const years = Math.max(1, 2030 - y);
   const r2 = n => Math.round(n * 100) / 100, r3 = n => Math.round(n * 1000) / 1000;
-  const g = r3(Math.max(0, M.emas.target - M.emas.have) / months);
+  // Guna baki di AWAL bulan (tolak simpanan bulan ini) supaya minimum bulan ini tidak berubah bila anda menyimpan.
+  const ms = monthlySaving(S, ym(today));
+  const g = r3(Math.max(0, M.emas.target - (M.emas.have - ms.g)) / months);
   const price = Number(S.gold.price) || 0;
   return {
     months,
-    simpanan: r2(Math.max(0, M.simpanan.target - M.simpanan.have) / months),
+    simpanan: r2(Math.max(0, M.simpanan.target - (M.simpanan.have - ms.rm)) / months),
     emas: g, emasRM: price ? r2(g * price) : null,
     gajiPct: M.gaji.have > 0 && M.gaji.have < M.gaji.target ? Math.round((Math.pow(M.gaji.target / M.gaji.have, 1 / years) - 1) * 1000) / 10 : 0,
     gajiYears: years,
@@ -1389,6 +1391,20 @@ function vRingkasan() {
     ${bar(c.emergencyPct)}
     <p class="small muted">${em.stage === 3 ? "Kedua-dua stage tercapai 🎉" : em.stage === 1 ? `Stage 1 (ASB): ${RM(asbHave(S))} / ${RM(S.asb.s1)}` : `Stage 1 (ASB) ✓ · Stage 2 (Tabung Haji): ${RM(thHave(S))} / ${RM(S.th.target)}`}</p>
   </section>
+
+  ${(() => { const MIN = planMinimum(S, t), PM = planMetrics(S), ms = monthlySaving(S, ym(t));
+    const row = (label, val, sub, pct, cls) => `<li style="padding:8px 0;align-items:flex-start"><div class="grow"><div class="row between"><span>${label}</span><b class="num">${val}</b></div>${sub ? `<div class="small muted" style="margin-top:2px">${sub}</div>` : ""}${pct != null ? `<div style="margin-top:6px">${bar(pct, cls)}</div>` : ""}</div></li>`;
+    const done = (m) => m.target && m.have >= m.target;
+    return `<section class="card">
+    <div class="row between"><h2>Minimum sebulan</h2><button class="sm" data-tab="pelan">Pelan</button></div>
+    <p class="small muted" style="margin-top:-4px">Untuk capai sasaran 2030 · ${MIN.months} bulan lagi hingga Dis 2030</p>
+    <ul class="list">
+      ${row("Simpanan kecemasan", done(PM.simpanan) ? "Tercapai ✓" : RM(MIN.simpanan), done(PM.simpanan) ? "" : `Bulan ini ${RM(ms.rm)} / ${RM(MIN.simpanan)}`, done(PM.simpanan) ? null : Math.min(100, MIN.simpanan ? ms.rm / MIN.simpanan * 100 : 100), "amber")}
+      ${row("Emas", done(PM.emas) ? "Tercapai ✓" : fmtG(MIN.emas), done(PM.emas) ? "" : `Bulan ini ${fmtG(ms.g)} / ${fmtG(MIN.emas)}${MIN.emasRM != null ? ` · ≈ ${RM(MIN.emasRM)} sebulan` : ""}`, done(PM.emas) ? null : Math.min(100, MIN.emas ? ms.g / MIN.emas * 100 : 100), "gold")}
+      ${row("Gaji", done(PM.gaji) ? "Tercapai ✓" : (MIN.gajiPct ? `+${MIN.gajiPct}% setahun` : "—"), done(PM.gaji) ? "" : `${RM(PM.gaji.have)} → ${RM(PM.gaji.target)}`, null)}
+      ${row("Pendapatan pasif", done(PM.pasif) ? "Tercapai ✓" : `+${RM(MIN.pasif)} / bln`, done(PM.pasif) ? "" : `${RM(PM.pasif.have)} → ${RM(PM.pasif.target)} sebulan · hujung 2029: RM1,000–2,000`, null)}
+    </ul>
+  </section>`; })()}
 
   <section class="card">
     <h2>Langkah seterusnya</h2>
