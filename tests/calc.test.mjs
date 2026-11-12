@@ -570,4 +570,7 @@ test("import audit Excel: baca, langkau Dikira=Tidak, gabung hibah, potong ikut 
   assert.equal(cut, "2026-02-10");                                     // petrol 17 Feb dilangkau
   assert.equal(L.planAuditImport(S2, items, { cutoff: cut }).skipped.after, 1);
   assert.equal(L.planAuditImport(S2, items, { includeExcluded: true }).tx.length, 6);
+  const tp = L.parseAudit([rows[0], [46031, "", "Bank A", "TRF", "PEKERJA | KUTIPAN", null, 300, 300, "Masuk", "Kutipan daripada pekerja asing", "Pihak ketiga masuk", "Ya"], rows[1]]);
+  const P4 = L.planAuditImport(L.normalize({}), tp, { excludeThirdParty: true });
+  assert.equal(P4.tx.length, 1); assert.equal(P4.skipped.thirdParty, 1);
 });

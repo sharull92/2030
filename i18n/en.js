@@ -3,6 +3,9 @@
 // Nama kategori, nama kad & nota pengguna sengaja TIDAK diterjemah.
 window.I18N_EN = {
 exact: {
+"Kecualikan pihak ketiga (duit bagi pihak orang lain: kutipan pekerja asing, tuntutan balik, FOMEMA/permit)": "Exclude third parties (money on behalf of others: foreign worker collections, claims, FOMEMA/permits)",
+"Dilangkau: {n} \"Dikira = Tidak\" (pindahan akaun sendiri & pra-kebenaran) · {n} selepas tarikh potong · {n} sudah diimport. Hibah bank digabung sebulan bagi setiap akaun.": "Skipped: {n} \"Counted = No\" (own-account transfers & pre-authorisations) · {n} after the cut-off date · {n} already imported. Bank hibah is combined per month per account.",
+"Dilangkau: {n} \"Dikira = Tidak\" (pindahan akaun sendiri & pra-kebenaran) · {n} selepas tarikh potong · {n} sudah diimport · {n} pihak ketiga. Hibah bank digabung sebulan bagi setiap akaun.": "Skipped: {n} \"Counted = No\" (own-account transfers & pre-authorisations) · {n} after the cut-off date · {n} already imported · {n} third-party. Bank hibah is combined per month per account.",
 "Import audit (Excel)": "Import audit (Excel)",
 "Masukkan transaksi daripada fail audit Excel anda (helaian": "Add transactions from your Excel audit file (sheet",
 "). Data hanya masuk ke app & akaun awan anda.": "). Data only goes into the app & your cloud account.",

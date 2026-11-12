@@ -114,7 +114,8 @@ svg.chart text{fill:var(--muted);font-size:11px;font-family:inherit}
 .toast{position:fixed;left:16px;right:16px;max-width:448px;margin:0 auto;bottom:calc(80px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);min-height:52px;display:flex;align-items:center;padding:0 16px;border-radius:12px;font-size:15px;font-weight:500;box-shadow:var(--shadow-raised);z-index:20}
 @media (prefers-reduced-motion:no-preference){.bar>i{transition:width .4s ease}}
 #printArea{display:none}
-.stat b{white-space:nowrap;font-size:clamp(1rem,4.8vw,1.45rem)!important;overflow:hidden;text-overflow:ellipsis}
+.stat{min-width:0}
+.stat b{white-space:nowrap;font-size:clamp(1rem,4.4vw,1.35rem)!important;overflow:hidden;text-overflow:ellipsis}
 #fab{position:fixed;right:16px;bottom:calc(80px + env(safe-area-inset-bottom));height:60px;min-height:60px;padding:0 22px 0 18px;border-radius:999px;border:0;background:var(--primary);color:var(--on-primary);font-size:16px;font-weight:700;display:inline-flex;align-items:center;gap:8px;box-shadow:var(--shadow-raised);z-index:15}
 #fab b{font-size:26px;line-height:1;font-weight:500}
 #sheet{position:fixed;inset:0;z-index:30;background:var(--scrim);display:flex;align-items:flex-end;justify-content:center}
@@ -772,6 +773,7 @@ function planAuditImport(S, items, opt = {}) {
   for (const it of items) {
     if (!it.counted && !opt.includeExcluded) { skipped.notCounted++; continue; }
     if (it.date >= cutoff) { skipped.after++; continue; }
+    if (opt.excludeThirdParty && /pihak ketiga/i.test(it.grp)) { skipped.thirdParty = (skipped.thirdParty || 0) + 1; continue; }
     if (/hibah|keuntungan bank/i.test(it.cat)) { const k = it.date.slice(0, 7) + "|" + it.acc + "|" + it.type; (hib[k] = hib[k] || []).push(it); continue; }
     const base = [it.date, it.acc, it.type, it.amount.toFixed(2), it.det].join("|");
     seen[base] = (seen[base] || 0) + 1;
@@ -2195,9 +2197,10 @@ function vImport() {
     <label>Import transaksi sebelum tarikh<input type="date" data-act="auditcut" value="${AUD.cutoff}"></label>
     ${AUD.manual && AUD.manual <= AUD.last ? `<p class="small muted" style="margin:.3rem 0">Rekod manual anda bermula ${fmtD(AUD.manual)} — audit dari tarikh itu dilangkau supaya tidak berganda.</p>` : ""}
     <label style="display:flex;gap:8px;align-items:center;margin-top:8px;color:var(--ink)"><input type="checkbox" data-act="auditexcl" ${AUD.includeExcluded ? "checked" : ""} style="width:20px">Termasuk baris "Dikira = Tidak" (pindahan akaun sendiri, pra-kebenaran)</label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:8px;color:var(--ink)"><input type="checkbox" data-act="auditthird" ${AUD.excludeThirdParty ? "checked" : ""} style="width:20px">Kecualikan pihak ketiga (duit bagi pihak orang lain: kutipan pekerja asing, tuntutan balik, FOMEMA/permit)</label>
     <div class="grid3" style="margin-top:10px">${stat("Transaksi", P.tx.length)}${stat("Masuk", RM(tin), "pos")}${stat("Keluar", RM(tout), "neg")}</div>
     <details style="margin-top:8px"><summary>Ikut bulan</summary><ul class="list">${Object.entries(P.months).map(([m, v]) => `<li style="padding:6px 0"><div class="grow">${fmtYM(m)} <span class="small muted">· ${v.n} transaksi</span></div><span class="small num"><span class="pos">+${RM(v.in)}</span> · <span class="neg">−${RM(v.out)}</span></span></li>`).join("")}</ul></details>
-    <p class="small muted">Dilangkau: ${P.skipped.notCounted} "Dikira = Tidak" · ${P.skipped.after} selepas tarikh potong · ${P.skipped.dup} sudah diimport. Hibah bank digabung sebulan bagi setiap akaun.</p>
+    <p class="small muted">Dilangkau: ${P.skipped.notCounted} "Dikira = Tidak" (pindahan akaun sendiri & pra-kebenaran) · ${P.skipped.after} selepas tarikh potong · ${P.skipped.dup} sudah diimport${P.skipped.thirdParty ? ` · ${P.skipped.thirdParty} pihak ketiga` : ""}. Hibah bank digabung sebulan bagi setiap akaun.</p>
     <div class="row"><button class="primary" data-act="auditgo" ${P.tx.length ? "" : "disabled"}>Import ${P.tx.length} transaksi</button><button class="ghost sm" data-act="auditcancel">Batal</button></div>`;
   }
   return `<section class="card" id="importAudit"><h2>Import audit (Excel)</h2>${body}<input type="file" id="auditFile" accept=".xlsx,.xls" hidden></section>`;
@@ -2549,6 +2552,7 @@ document.addEventListener("change", e => {
   if (act === "reportmonth" && el.value) { reportMonth = el.value; }
   if (act === "auditcut" && el.value && AUD) { AUD.cutoff = el.value; render(); }
   if (act === "auditexcl" && AUD) { AUD.includeExcluded = el.checked; render(); }
+  if (act === "auditthird" && AUD) { AUD.excludeThirdParty = el.checked; render(); }
   if (act === "budgetmonth" && el.value) { budgetMonth = el.value; render(); }
   if (act === "budgetamt") { const x = S.budgets.find(y => y.id === el.dataset.id); if (x && num(el.value) >= 0) { x.amount = num(el.value); commit(); } }
   if (act === "sumyear") { sumYear = num(el.value); render(); }
