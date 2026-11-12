@@ -3,6 +3,7 @@
 // Nama kategori, nama kad & nota pengguna sengaja TIDAK diterjemah.
 window.I18N_EN = {
 exact: {
+"RM {n} / RM {n} · {n}%": "RM {n} / RM {n} · {n}%",
 "Sembunyi bahagian": "Hide section",
 "Tunjuk bahagian": "Show section",
 "Bahagian disembunyikan: {n}": "Hidden sections: {n}",

@@ -114,6 +114,15 @@ svg.chart text{fill:var(--muted);font-size:11px;font-family:inherit}
 .toast{position:fixed;left:16px;right:16px;max-width:448px;margin:0 auto;bottom:calc(80px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);min-height:52px;display:flex;align-items:center;padding:0 16px;border-radius:12px;font-size:15px;font-weight:500;box-shadow:var(--shadow-raised);z-index:20}
 @media (prefers-reduced-motion:no-preference){.bar>i{transition:width .4s ease}}
 #printArea{display:none}
+/* Elak teks terkeluar di skrin kecil */
+html,body{overflow-x:clip}
+#app .card{overflow-wrap:break-word}
+#app .row > *,#app .grid2 > *,#app .grid3 > *,#app .colhead > *,#app .list li > *{min-width:0}
+#app .list .grow,#app .list .grow *{overflow-wrap:break-word}
+#app .pill{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app .row > .pill,#app .row > .num,#app .row > b{flex-shrink:0}
+#app select{max-width:100%;text-overflow:ellipsis}
+#app input,#app select,#app textarea{min-width:0}
 .stat{min-width:0;container-type:inline-size}
 .stat b{white-space:nowrap;font-size:clamp(.85rem,11.5cqw,1.4rem)!important;overflow:visible}
 .is-hid{display:none!important}
@@ -157,6 +166,7 @@ section.card.is-collapsed .colhead{margin-bottom:0}
 #quickForm .qbody{flex:1;min-height:0;overflow-y:auto;margin:0 -20px;padding:0 20px}
 #quickForm .qfoot{padding-top:12px}
 #sheet .chips{flex-wrap:wrap;overflow:visible;margin:6px 0 10px;padding:0}
+#sheet .chips button{flex:0 1 auto;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:1.25;padding:8px 14px}
 #sheet .amt{margin:8px 0 10px}
 @media print{#fab,#sheet{display:none!important}}
 @media print{
@@ -962,6 +972,7 @@ const RM = n => isFinite(n) ? fmtRM.format(Math.round(n * 100) / 100 + 0).replac
 // Gram emas: hingga 3 tempat perpuluhan (cth. 1.025 g)
 const fmtG = n => (Number(n) || 0).toLocaleString("ms-MY", { minimumFractionDigits: 0, maximumFractionDigits: 3 }) + " g";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const escW = s => esc(s).replace(/\//g, "/<wbr>");
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const MON_MS = ["Jan","Feb","Mac","Apr","Mei","Jun","Jul","Ogo","Sep","Okt","Nov","Dis"];
 const MON_EN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -1490,7 +1501,7 @@ function vRingkasan() {
       <div class="stat"><span>Baki</span><b class="${ys.balance >= 0 ? "pos" : "neg"}">${RM(ys.balance)}</b>${ys.expected || ys.pending ? `<span>Dijangka hujung bulan: ${RM(ys.projected)}</span>` : ""}</div>
     </div>
     ${Object.keys(ys.byCat).length ? `<h3 style="margin-top:14px">Duit keluar ikut kategori</h3>
-    <ul class="list">${Object.entries(ys.byCat).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<li style="padding:6px 0"><div class="grow">${esc(n)}<div class="bar" style="margin-top:4px;height:6px"><i style="width:${(v / ys.spent * 100).toFixed(1)}%;background:var(--red)"></i></div></div><span class="num">${RM(v)}</span></li>`).join("")}</ul>` : `<p class="empty">Tiada duit keluar direkod${sumYear ? " untuk " + sumYear : ""}.</p>`}
+    <ul class="list">${Object.entries(ys.byCat).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<li style="padding:6px 0"><div class="grow">${escW(n)}<div class="bar" style="margin-top:4px;height:6px"><i style="width:${(v / ys.spent * 100).toFixed(1)}%;background:var(--red)"></i></div></div><span class="num">${RM(v)}</span></li>`).join("")}</ul>` : `<p class="empty">Tiada duit keluar direkod${sumYear ? " untuk " + sumYear : ""}.</p>`}
     <h3 style="margin-top:14px">Campuran pendapatan</h3>
     <div class="mix" aria-hidden="true">${["aktif", "sampingan", "pasif"].map(k => `<i style="width:${c.mix[k] / mixT * 100}%;background:${MIXC[k]}"></i>`).join("")}</div>
     <div class="row small" style="margin-top:6px">${["aktif", "sampingan", "pasif"].map(k => `<span><span style="color:${MIXC[k]}">■</span> ${k[0].toUpperCase() + k.slice(1)} ${RM(c.mix[k])}</span>`).join("")}</div>
@@ -1700,13 +1711,15 @@ function vBudget() {
     <div class="row between"><h2>Bajet bulanan</h2>${monthSelect("budgetmonth", budgetMonth, [...S.tx, ...S.cardTx].map(t => t.date)).replace(/<option value="" (selected)?>Semua bulan<\/option>/, "")}</div>
     ${S.budgets.length ? `<div class="row between small" style="margin-top:4px"><span>Belanja ${RM(b.spent)} / bajet ${RM(b.budget)}</span><span>${b.pct.toFixed(0)}%</span></div>
     ${budgetBar({ pct: b.pct, level: b.pct > 100 ? "lebih" : b.pct >= 80 ? "hampir" : "ok" })}
-    <ul class="list" style="margin-top:8px">${b.rows.map(r => `<li style="align-items:flex-start"><div class="grow">
-        <div class="row between"><span>${esc(r.cat)}</span>${pillB(r)}</div>
-        <div class="row between small muted" style="margin:2px 0 4px"><span>${RM(r.spent)} / ${RM(r.amount)}</span><span>${isFinite(r.pct) ? r.pct.toFixed(0) + "%" : "—"}</span></div>
+    <ul class="list" style="margin-top:8px">${b.rows.map(r => `<li style="display:block">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="grow" style="flex:1;min-width:0;font-weight:600">${escW(r.cat)}</div>
+          <input type="number" inputmode="decimal" step="0.01" min="0" value="${r.amount}" data-act="budgetamt" data-id="${r.id}" aria-label="Bajet ${esc(r.cat)}" style="width:112px;flex:none;padding-left:10px;padding-right:8px">
+          ${del("budgets", r.id)}
+        </div>
+        <div class="row between small" style="margin:6px 0 6px;gap:6px"><span class="muted">${RM(r.spent)} / ${RM(r.amount)} · ${isFinite(r.pct) ? r.pct.toFixed(0) + "%" : "—"}</span>${pillB(r)}</div>
         ${budgetBar(r)}
-      </div>
-      <input type="number" inputmode="decimal" step="0.01" min="0" value="${r.amount}" data-act="budgetamt" data-id="${r.id}" aria-label="Bajet ${esc(r.cat)}" style="width:96px">
-      ${del("budgets", r.id)}</li>`).join("")}</ul>` : `<p class="empty">Belum ada bajet. Tetapkan had sebulan bagi setiap kategori — belanja tunai dan kad kredit dikira automatik.</p>`}
+      </li>`).join("")}</ul>` : `<p class="empty">Belum ada bajet. Tetapkan had sebulan bagi setiap kategori — belanja tunai dan kad kredit dikira automatik.</p>`}
     ${b.unbudgeted.length ? `<p class="small muted" style="margin:10px 0 4px">Belanja tanpa bajet: <b>${RM(b.unbudgetedTotal)}</b> — ${b.unbudgeted.slice(0, 6).map(u => `<button class="ghost sm" data-act="budgetquick" data-cat="${esc(u.cat)}" data-amt="${Math.ceil(u.spent / 10) * 10}" title="Tambah bajet">${esc(u.cat)} ${RM(u.spent)} ＋</button>`).join(" ")}</p>` : ""}
     <form class="add" data-form="budget">
       <label>Kategori<input name="cat" list="budgetcats" required placeholder="cth. Makan"></label>
@@ -1975,8 +1988,8 @@ function vPelan() {
 
   <section class="card">
     <h2>Peta perjalanan 5 tahun</h2>
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">${PLAN_YEARS.map(p => `<a href="#tahun-${p.y}" style="text-decoration:none;color:inherit;display:block;border-radius:10px;padding:8px 6px;background:${p.y === cy ? "var(--red)" : "var(--paper)"};color:${p.y === cy ? "#fff" : "var(--ink)"}">
-      <div style="font:700 .95rem 'Bricolage Grotesque',sans-serif">${p.y}</div><div style="font-size:.7rem;line-height:1.2;min-height:2.4em;opacity:.9">${p.short}</div>
+    <div class="roadmap" style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px">${PLAN_YEARS.map(p => `<a href="#tahun-${p.y}" style="text-decoration:none;color:inherit;display:block;min-width:0;border-radius:10px;padding:8px 5px;background:${p.y === cy ? "var(--red)" : "var(--paper)"};color:${p.y === cy ? "#fff" : "var(--ink)"}">
+      <div style="font:700 .95rem 'Bricolage Grotesque',sans-serif">${p.y}</div><div style="font-size:.68rem;line-height:1.2;min-height:2.4em;opacity:.9;overflow-wrap:anywhere;hyphens:auto">${p.short}</div>
       <div style="height:4px;border-radius:2px;background:${p.y === cy ? "rgba(255,255,255,.3)" : "var(--line)"};margin-top:6px"><i style="display:block;height:100%;border-radius:2px;width:${yearPct(p.y)}%;background:${p.y === cy ? "#fff" : "var(--teal)"}"></i></div></a>`).join("")}</div>
   </section>
 

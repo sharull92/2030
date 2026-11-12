@@ -94,6 +94,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 
 ## Sembunyi / tunjuk bahagian
 - `enhanceCollapsibles()` dipanggil dalam `render()` (sebelum terjemahan): setiap `section.card` (kecuali `.hero`) dengan `h2` dapat butang ▾/▸ (`.colbtn`, data-act `collapse`) dalam `.colhead`; setiap `h3` anak langsung kad menjadi sub-bahagian (menyembunyikan adik-beradik hingga sub-tajuk seterusnya). Kunci `colKey()` = tab + tajuk tanpa nombor/bulan (stabil antara tahun/bulan). Disimpan ikut peranti `localStorage["pelan2030:hidden"]`; Tetapan → Paparan → "Tunjuk semua bahagian".
+- Elak teks terkeluar (skrin 360px): `html,body{overflow-x:clip}`; anak `.row/.grid2/.grid3/.colhead/.list li` `min-width:0`; `.pill` nowrap + tidak mengecil dalam `.row` (turun baris jika perlu); `escW()` = `esc()` + `<wbr>` selepas "/" untuk nama kategori panjang; peta perjalanan `minmax(0,1fr)`; cip panel Rekod boleh berbilang baris; baris bajet: nama + input + ✕, kemudian jumlah + pil, kemudian bar. Semak dengan skrip pengesan limpahan (Playwright: setiap tab × 360/390/412px × BM/EN, lapor elemen melepasi kad/skrin).
 - Nilai `.stat b` guna container query (`11.5cqw`) supaya nombor panjang mengecil, bukan terpotong.
 
 ## Format nombor
