@@ -3,6 +3,11 @@
 // Nama kategori, nama kad & nota pengguna sengaja TIDAK diterjemah.
 window.I18N_EN = {
 exact: {
+    "{m} {n} keluar tunai RM {n}": "{m} {n} cash out RM {n}",
+    "{m} {n} belanja kad RM {n}": "{m} {n} card spending RM {n}",
+    "{m} {n} bayaran kad RM {n}": "{m} {n} card payments RM {n}",
+    "Jumlah: masuk RM {n} · keluar tunai RM {n}": "Total: in RM {n} · cash out RM {n}",
+    "Jumlah: bayaran kad RM {n} · belanja kad RM {n}": "Total: card payments RM {n} · card spending RM {n}",
     "Tiada belanja kad direkod.": "No card spending recorded.",
     "Tiada belanja kad direkod untuk {n}.": "No card spending recorded for {n}.",
     "Belanja kad ikut kategori": "Card spending by category",

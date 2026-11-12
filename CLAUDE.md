@@ -20,6 +20,7 @@ Bahasa antara muka: **Bahasa Melayu**. Mata wang: **RM** (`ms-MY`).
 - `settings.monthStart` (1–28, lalai 26 dipasang sekali semasa mula jika tiada). 26 → "Jan 2026" = 26 Dis 2025 – 25 Jan 2026; "Tahun 2026" = 26 Dis 2025 – 25 Dis 2026. Ubah di Tetapan → Profil → "Bulan kewangan bermula hari" (1 = bulan kalendar).
 - Logik: `mStart(S)`, `periodOf(date, start)`, `pk(S, date)` (kunci "YYYY-MM" tempoh), `pkNow(S, today)`, `periodRange(S, key)` → `{from, to}`. SEMUA pengumpulan ikut bulan (Ringkasan, `yearSummary`, `monthFlow`/trend, `cardCalc`, `spendByCat`/bajet, `monthReport`/PDF, `excelSheets`, `monthlySaving`, `planMinimum`, pratonton import audit, senarai transaksi/kad) guna `pk()` — bukan `date.slice(0,7)`.
 - Kekal ikut kalendar: tarikh bayar komitmen/hutang/kad, kunci `paid` (`monthOut`), notifikasi, .ics, `nextReview`, gabungan hibah audit.
+- Graf trend ada penapis `trendPay` → `monthFlow(S, m, mode)`: "tunai" (masuk vs keluar tunai termasuk bil kad), "kad" (bayaran kad vs belanja kad); `chart(data, labels)`.
 - Ringkasan juga ada penapis `sumPay` Semua/Tunai/Kad kredit: Tunai = Pendapatan, Keluar tunai (`cashOut`, termasuk bil kad), Baki tunai + `byCatCash`; Kad = Guna kad, Bayaran kad (`cardPaid`), Belum bayar sekarang + `byCatCard`.
 - Ringkasan: pilih tahun + pilih bulan (`sumMonth`, "Sepanjang tahun" atau 12 bulan; hanya bila tahun dipilih) → `yearSummary(S, year, today, month)`; julat tarikh dipapar di bawah tajuk.
 

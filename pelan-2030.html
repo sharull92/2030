@@ -465,8 +465,16 @@ function yearSummary(S, year, today, month) {
 
 // Aliran sebulan, sama definisi dengan ringkasan: masuk = transaksi Masuk; keluar = transaksi Keluar
 // (kecuali bayaran bil kad) + belanja kad kredit.
-function monthFlow(S, m) {
+// mode "tunai": keluar = tx Keluar bukan belian kad (termasuk bayaran bil kad);
+// mode "kad": in = bayaran kad, out = belanja kad (cardTx + tx isCardTx).
+function monthFlow(S, m, mode) {
   const inM = t => pk(S, t.date) === m;
+  if (mode === "tunai") return { m,
+    in: sum(S.tx.filter(t => t.type === "in" && inM(t)), t => t.amount),
+    out: sum(S.tx.filter(t => t.type === "out" && inM(t) && !isCardTx(t)), t => t.amount) };
+  if (mode === "kad") return { m,
+    in: sum(S.cardTx.filter(t => t.type === "bayar" && inM(t)), t => t.amount),
+    out: sum(S.cardTx.filter(t => t.type === "belanja" && inM(t)), t => t.amount) + sum(S.tx.filter(t => t.type === "out" && inM(t) && isCardTx(t)), t => t.amount) };
   return {
     m,
     in: sum(S.tx.filter(t => t.type === "in" && inM(t)), t => t.amount),
@@ -1078,7 +1086,7 @@ const today = () => new Date();
 let S = load();
 let tab = (() => { try { return localStorage.getItem(KEY + ":tab") || "ringkasan"; } catch { return "ringkasan"; } })();
 let txMonth = pkNow(S, today()), txPay = "";
-let trendSel = "6";
+let trendSel = "6", trendPay = "";
 let sumYear = new Date().getFullYear(), sumMonth = "", sumPay = "";
 
 function load() {
@@ -1460,19 +1468,19 @@ const stat = (label, val, cls = "") => `<div class="stat"><span>${label}</span><
 const del = (list, id) => `<button class="ghost sm" data-act="del" data-list="${list}" data-id="${id}" aria-label="Padam">✕</button>`;
 const dsrPill = c => `<span class="pill ${c.dsrLevel === "sihat" ? "ok" : c.dsrLevel === "tinggi" ? "bad" : "warn"}">DSR ${isFinite(c.dsr) ? c.dsr.toFixed(0) + "%" : "—"} · ${c.dsrLevel}</span>`;
 
-function chart(data) {
+function chart(data, L = ["Masuk", "Keluar"]) {
   const W = 320, H = 140, P = 22, max = Math.max(1, ...data.flatMap(d => [d.in, d.out]));
   const bw = (W - P) / data.length;
   const bars = data.map((d, i) => {
     const x = P + i * bw, hi = (d.in / max) * (H - 30), ho = (d.out / max) * (H - 30);
-    return `<rect x="${x + bw * .12}" y="${H - 18 - hi}" width="${bw * .36}" height="${hi}" rx="2" fill="var(--teal)"><title>${fmtYM(d.m)} masuk ${RM(d.in)}</title></rect>
-      <rect x="${x + bw * .52}" y="${H - 18 - ho}" width="${bw * .36}" height="${ho}" rx="2" fill="var(--red)"><title>${fmtYM(d.m)} keluar ${RM(d.out)}</title></rect>
+    return `<rect x="${x + bw * .12}" y="${H - 18 - hi}" width="${bw * .36}" height="${hi}" rx="2" fill="var(--teal)"><title>${fmtYM(d.m)} ${L[0].toLowerCase()} ${RM(d.in)}</title></rect>
+      <rect x="${x + bw * .52}" y="${H - 18 - ho}" width="${bw * .36}" height="${ho}" rx="2" fill="var(--red)"><title>${fmtYM(d.m)} ${L[1].toLowerCase()} ${RM(d.out)}</title></rect>
       <text x="${x + bw / 2}" y="${H - 5}" text-anchor="middle">${BULAN[+d.m.slice(5) - 1]}</text>`;
   }).join("");
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Graf aliran tunai">
     <line x1="${P}" x2="${W}" y1="${H - 18}" y2="${H - 18}" stroke="var(--line)"/>
     <text x="0" y="12">${RM(max)}</text>${bars}</svg>
-    <div class="row small muted"><span><span style="color:var(--teal)">■</span> Masuk</span><span><span style="color:var(--red)">■</span> Keluar</span></div>`;
+    <div class="row small muted"><span><span style="color:var(--teal)">■</span> ${L[0]}</span><span><span style="color:var(--red)">■</span> ${L[1]}</span></div>`;
 }
 
 function nextSteps(c) {
@@ -1505,7 +1513,7 @@ function vRingkasan() {
   if (sumMonth && (!sumYear || sumMonth.slice(0, 4) !== String(sumYear))) sumMonth = "";
   const ys = yearSummary(S, sumYear, t, sumMonth);
   const curP = pkNow(S, t);
-  const tdata = trendMonths(trendSel, new Date(+curP.slice(0, 4), +curP.slice(5, 7) - 1, 1)).map(m => monthFlow(S, m));
+  const tdata = trendMonths(trendSel, new Date(+curP.slice(0, 4), +curP.slice(5, 7) - 1, 1)).map(m => monthFlow(S, m, trendPay));
   const rngTxt = (() => {
     if (sumMonth) { const r = periodRange(S, sumMonth); return `${fmtD(r.from)} – ${fmtD(r.to)}`; }
     if (sumYear && mStart(S) > 1) { const a = periodRange(S, sumYear + "-01"), z = periodRange(S, sumYear + "-12"); return `${fmtD(a.from)} – ${fmtD(z.to)}`; }
@@ -1593,8 +1601,10 @@ function vRingkasan() {
         <option value="12" ${trendSel === "12" ? "selected" : ""}>12 bulan terakhir</option>
         ${years.map(y => `<option value="${y}" ${trendSel === String(y) ? "selected" : ""}>Tahun ${y}</option>`).join("")}
       </select></div>
-    ${chart(tdata)}
-    <p class="small muted" style="margin:.4rem 0 0">Jumlah: masuk ${RM(sum(tdata, d => d.in))} · keluar ${RM(sum(tdata, d => d.out))}</p>
+    <div class="seg" style="grid-template-columns:1fr 1fr 1fr;margin:6px 0 8px">${[["", "Semua"], ["tunai", "Tunai"], ["kad", "Kad kredit"]].map(([k, l]) => `<button type="button" data-act="trendpay" data-v="${k}" aria-pressed="${trendPay === k}" style="padding:4px 2px;white-space:nowrap">${l}</button>`).join("")}</div>
+    ${(() => { const L = trendPay === "kad" ? ["Bayaran kad", "Belanja kad"] : trendPay === "tunai" ? ["Masuk", "Keluar tunai"] : ["Masuk", "Keluar"];
+      return `${chart(tdata, L)}
+    <p class="small muted" style="margin:.4rem 0 0">Jumlah: ${L[0].toLowerCase()} ${RM(sum(tdata, d => d.in))} · ${L[1].toLowerCase()} ${RM(sum(tdata, d => d.out))}</p>`; })()}
   </section>
 
   <section class="card">
@@ -2643,6 +2653,7 @@ document.addEventListener("click", e => {
     }
     case "txpay": txPay = b.dataset.v; render(); break;
     case "sumpay": sumPay = b.dataset.v; render(); break;
+    case "trendpay": trendPay = b.dataset.v; render(); break;
     case "lang": setLang(b.dataset.v || (LANG === "en" ? "ms" : "en")); break;
     case "theme": setTheme(b.dataset.v || (curTheme() === "dark" ? "light" : "dark")); break;
     case "emailtok": makeEmailToken(); break;
